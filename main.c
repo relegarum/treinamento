@@ -10,6 +10,14 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <regex.h>
+
+uint32_t get_response_size( char *first_chunk, uint32_t* size )
+{
+  char *slice = strstr( first_chunk, "Content-Length:" );
+  uint32_t teste;
+  sscanf( slice, "Content-Length: %d\r\n%*s", &size );
+}
 
 void get_resource( char *uri, char *hostname, char *resource )
 {
@@ -93,11 +101,11 @@ int handle_arguments( int argc,
     }
   }
 
-  if ( *output == NULL )
+  /*if ( *output == NULL )
   {
     printf( "Coudn't open file: %s", argv[ 1 ] );
     exit( 1 );
-  }
+  }*/
 
   return 0;
 }
@@ -148,6 +156,9 @@ int main( int argc, char **argv )
     return 1;
   }
   buffer[ bytes_received ] = '\0';
+
+  uint32_t size;
+  get_response_size( buffer, &size );
 
   printf( "Received:\n %s \n", buffer );
 
