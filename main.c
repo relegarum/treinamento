@@ -11,7 +11,16 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-int handle_arguments( int argc, char **argv, struct addrinfo **server_info, FILE **output_file )
+void get_resource( char *uri, char *hostname, char *resource )
+{
+  sscanf( uri, "%[^/]%s", hostname, resource );
+}
+
+int handle_arguments( int argc,
+                      char **argv,
+                      struct addrinfo **server_info,
+                      char *resource_required,
+                      FILE **output )
 {
   const int32_t number_of_elements = 3;
   if ( argc < number_of_elements )
@@ -27,23 +36,26 @@ int handle_arguments( int argc, char **argv, struct addrinfo **server_info, FILE
   hints.ai_family   = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
 
-  int32_t status = getaddrinfo( argv[ 1 ], "80", &hints, &res );
+  char hostname[ 50 ];
+  get_resource( argv[ 1 ], hostname, resource_required );
+
+  int32_t status = getaddrinfo( hostname, "80", &hints, &res );
   if ( status != 0 )
   {
     printf( "getaddrinfo: %s\n", gai_strerror( status ) );
     exit( 1 );
   }
 
-  printf( "IP adresses for %s :", argv[ 1 ] );
+  printf( "IP adresses for %s :", hostname );
 
   *server_info = res;
   struct addrinfo *p;
   for ( p = res; p != NULL; p = p->ai_next )
   {
     void *addr;
-    char ipver[50];
+    char ipver[ 50 ];
 
-    if( p->ai_family == AF_INET )
+    if ( p->ai_family == AF_INET )
     {
       struct sockaddr_in *ipv4 = (struct sockaddr_in *)p->ai_addr;
       addr = &( ipv4->sin_addr );
@@ -64,7 +76,7 @@ int handle_arguments( int argc, char **argv, struct addrinfo **server_info, FILE
   if ( ( argc == 4 ) &&
        ( strncmp( argv[ 3 ], "over", 4 ) == 0 ) )
   {
-    *output_file = fopen( argv[ 1 ], "w" );
+    *output = fopen( argv[ 1 ], "w" );
   }
   else
   {
@@ -77,11 +89,11 @@ int handle_arguments( int argc, char **argv, struct addrinfo **server_info, FILE
     }
     else
     {
-      *output_file = fopen( argv[ 1 ], "w" );
+      *output = fopen( argv[ 1 ], "w" );
     }
   }
 
-  if ( output_file == NULL )
+  if ( *output == NULL )
   {
     printf( "Coudn't open file: %s", argv[ 1 ] );
     exit( 1 );
@@ -94,8 +106,9 @@ int main( int argc, char **argv )
 {
   struct addrinfo *server_info = NULL;
   FILE            *output_file  = NULL;
+  char		         resource_required[ 50 ];
 
-  if ( handle_arguments( argc, argv, &server_info, &output_file ) != 0 )
+  if ( handle_arguments( argc, argv, &server_info, resource_required, &output_file ) != 0 )
   {
     printf( "Couldn't handle arguments\n" );
     return 1;
@@ -115,7 +128,10 @@ int main( int argc, char **argv )
     exit( 1 );
   }
 
-  char *request_msg   = "GET /index.html HTTP/1.0\r\n\r\n";
+  printf( "Connected!\n" );
+
+  char request_msg[ 80 ];
+  sprintf( request_msg, "GET %s HTTP/1.0\r\n\r\n", resource_required );
   int32_t request_len = strlen( request_msg );
   int32_t bytes_sent = send( socket_descriptor, request_msg, request_len, 0 );
   if ( bytes_sent != request_len )
