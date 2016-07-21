@@ -1,3 +1,14 @@
+/* \file main.c
+ *
+ * \brief Treinamento Este programa deverá ser operado por linha de comando e
+ * compilado sobre Linux. Ele deverá receber como parâmetro uma URI completa e
+ * um nome de arquivo, e em seguida conectar-se ao servidor, recuperar a
+ * página e salvá-la no arquivo informado.
+ * Não é permitido usar libfetch ou outras bibliotecas equivalentes.
+ *
+ *
+ * "$Id: $"
+*/
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -12,158 +23,148 @@
 #include <netinet/in.h>
 #include <regex.h>
 
-uint32_t get_response_size( char *first_chunk, uint32_t* size )
-{
-  char *slice = strstr( first_chunk, "Content-Length:" );
-  uint32_t teste;
-  sscanf( slice, "Content-Length: %d\r\n%*s", &size );
-}
+#include "http_utils.h"
 
-void get_resource( char *uri, char *hostname, char *resource )
+int handle_file(char* fileName, uint8_t overwrite, FILE **output)
 {
-  sscanf( uri, "%[^/]%s", hostname, resource );
-}
-
-int handle_arguments( int argc,
-                      char **argv,
-                      struct addrinfo **server_info,
-                      char *resource_required,
-                      FILE **output )
-{
-  const int32_t number_of_elements = 3;
-  if ( argc < number_of_elements )
   {
-    printf( "wrong number of arguments" );
-    exit( 1 );
+    struct stat buffer;
+    int result = stat(fileName, &buffer);
+    if (result != 0)
+    {
+      *output = fopen(fileName, "w");
+    }
+    else
+    {
+      if (overwrite == 1)
+      {
+        *output = fopen(fileName, "w");
+      }
+      else
+      {
+        printf("File already exist and the overwrite flags wasn't passed\n");
+        return -1;
+      }
+    }
   }
 
-  struct addrinfo hints, *res;
-  char ipstr[ INET6_ADDRSTRLEN ];
+  if (*output == NULL)
+  {
+    perror("Coudn't open file");
+    return -1;
+  }
 
-  memset( &hints, 0, sizeof( hints ) );
+  return 0;
+}
+
+int handle_arguments(int argc,
+                     char **argv,
+                     struct addrinfo **server_info,
+                     char *resource_required,
+                     FILE **output)
+{
+  const int32_t  number_of_elements   = 3;
+  const int32_t  number_of_elements_with_flag = 4;
+  const uint32_t index_of_uri         = 1;
+  const uint32_t index_of_output_file = 2;
+  const uint32_t index_of_flag        = 3;
+
+
+  if (argc < number_of_elements)
+  {
+    printf("wrong number of arguments");
+    return -1;
+  }
+
+  struct addrinfo hints;
+  struct addrinfo *res;
+  memset(&hints, 0, sizeof(hints));
   hints.ai_family   = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
 
-  char hostname[ 50 ];
-  get_resource( argv[ 1 ], hostname, resource_required );
+  char hostname[50];
+  get_resource(argv[index_of_uri], hostname, resource_required);
 
-  int32_t status = getaddrinfo( hostname, "80", &hints, &res );
-  if ( status != 0 )
+  /*Get addrinfo*/
+  int32_t status = getaddrinfo(hostname, "80", &hints, &res);
+  if (status != 0)
   {
-    printf( "getaddrinfo: %s\n", gai_strerror( status ) );
-    exit( 1 );
+    printf("getaddrinfo: %s\n", gai_strerror(status));
+    return -1;
   }
-
-  printf( "IP adresses for %s :", hostname );
 
   *server_info = res;
-  struct addrinfo *p;
-  for ( p = res; p != NULL; p = p->ai_next )
+
+  /* Verify the overwrite flag existence */
+  const char* overwrite_flag = "over";
+  char* file_name = argv[index_of_output_file];
+  uint8_t ovewrite = 0;
+  if ((argc == number_of_elements_with_flag) &&
+     (strncmp(argv[index_of_flag], overwrite_flag, strlen(overwrite_flag)) == 0))
   {
-    void *addr;
-    char ipver[ 50 ];
-
-    if ( p->ai_family == AF_INET )
-    {
-      struct sockaddr_in *ipv4 = (struct sockaddr_in *)p->ai_addr;
-      addr = &( ipv4->sin_addr );
-      strncpy( ipver, "IPv4", 5 );
-    }
-    else
-    {
-      struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)p->ai_addr;
-      addr = &( ipv6->sin6_addr );
-      strncpy( ipver, "IPv6", 5 );
-    }
-
-    inet_ntop( p->ai_family, addr, ipstr, sizeof( ipstr ) );
-    printf( " %s: %s\n", ipver, ipstr );
+    ovewrite = 1;
   }
 
-
-  if ( ( argc == 4 ) &&
-       ( strncmp( argv[ 3 ], "over", 4 ) == 0 ) )
-  {
-    *output = fopen( argv[ 1 ], "w" );
-  }
-  else
-  {
-    struct stat buffer;
-    int result = stat( argv[ 1 ], &buffer );
-    if( result != 0 )
-    {
-      printf( "File doesn't exist\n" );
-      exit( 1 );
-    }
-    else
-    {
-      *output = fopen( argv[ 1 ], "w" );
-    }
-  }
-
-  /*if ( *output == NULL )
-  {
-    printf( "Coudn't open file: %s", argv[ 1 ] );
-    exit( 1 );
-  }*/
-
-  return 0;
+  return handle_file(file_name, ovewrite, output);
 }
 
-int main( int argc, char **argv )
+int main(int argc, char **argv)
 {
   struct addrinfo *server_info = NULL;
-  FILE            *output_file  = NULL;
-  char		         resource_required[ 50 ];
+  FILE            *output_file = NULL;
+  char		         resource_required[ 100 ];
 
-  if ( handle_arguments( argc, argv, &server_info, resource_required, &output_file ) != 0 )
+  int32_t ret =  0;
+  int socket_descriptor = -1;
+  if (handle_arguments(argc, argv, &server_info, resource_required, &output_file) != 0)
   {
     printf( "Couldn't handle arguments\n" );
-    return 1;
+    ret = -1;
+    goto exit;
   }
 
-  int socket_descriptor = socket( server_info->ai_family, server_info->ai_socktype, server_info->ai_protocol );
-  if ( socket_descriptor == -1 )
+  socket_descriptor = socket(server_info->ai_family, server_info->ai_socktype, server_info->ai_protocol);
+  if (socket_descriptor == -1)
   {
-    perror( "socket" );
-    exit( 1 );
+    perror("socket");
+    ret = -1;
+    goto exit;
   }
 
-  int status = connect( socket_descriptor, server_info->ai_addr, server_info->ai_addrlen );
-  if ( status == -1 )
+  printf("Trying to Connect..");
+
+  int status = connect(socket_descriptor, server_info->ai_addr, server_info->ai_addrlen);
+  if (status == -1)
   {
-    perror( "connect" );
-    exit( 1 );
+    perror("connect");
+    ret = -1;
+    goto exit;
   }
 
-  printf( "Connected!\n" );
+  printf("Connected!\n");
 
-  char request_msg[ 80 ];
-  sprintf( request_msg, "GET %s HTTP/1.0\r\n\r\n", resource_required );
-  int32_t request_len = strlen( request_msg );
-  int32_t bytes_sent = send( socket_descriptor, request_msg, request_len, 0 );
-  if ( bytes_sent != request_len )
+  const int32_t transmission_rate = 512;
+  if (download_file(socket_descriptor, resource_required, transmission_rate, output_file ) != 0)
   {
-    printf( "Coudn't send entire request\n" );
-    return 1;
+    ret = -1;
+    goto exit;
   }
 
-  char buffer[ 5000 ];
-  int bytes_received = recv( socket_descriptor, buffer, sizeof( buffer ), 0 );
-  if( bytes_received <= 0 )
+ exit:
+  if( socket_descriptor != -1)
   {
-    printf( "Coudn't receive response\n" );
-    return 1;
+    close( socket_descriptor );
   }
-  buffer[ bytes_received ] = '\0';
 
-  uint32_t size;
-  get_response_size( buffer, &size );
+  if( server_info != NULL )
+  {
+    freeaddrinfo(server_info);
+  }
+  if( output_file != NULL )
+  {
+    fclose(output_file);
+  }
 
-  printf( "Received:\n %s \n", buffer );
-
-  freeaddrinfo( server_info );
-  fclose( output_file );
-  return 0;
+  return ret;
 }
 
