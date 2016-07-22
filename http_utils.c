@@ -116,23 +116,46 @@ void get_resource(char *uri, char *hostname, char *resource)
   }
 }
 
-int32_t download_file(int socket_descriptor, char *resource_required, int32_t transmission_rate, FILE *output_file)
+int32_t download_file(int socket_descriptor, char *hostname, char *resource_required, int32_t transmission_rate, FILE *output_file)
 {
-  int resource_required_length = strlen(resource_required);
+  int32_t resource_required_length = strlen(resource_required);
+  int32_t hostname_length          = strlen(hostname);
 
-  char *request_mask = "GET %s HTTP/1.0\r\n\r\n";
-  char *request_msg = malloc(sizeof(char)*(strlen(request_mask) + resource_required_length + 1));
-  sprintf(request_msg, request_mask, (resource_required_length != 0) ? resource_required : "/index.html");
+  char *request_mask = "GET %s HTTP/1.0\r\n"
+                       //"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8\r\n"
+                       //"Accept-Encoding: gzip, deflate, sdch\r\n"
+                       //"Accept-Language: en-US,en;q=0.8\r\n"
+                       //"Cache-Control: max-age=0\r\n"
+                       //"Connection: keep-alive\r\n"
+                       "Host: %s\r\n"
+                       //"Upgrade-Insecure-Requests: 1\r\n"
+                       //"User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.108 Safari/537.36\r\n"
+                       "\r\n"
+          ;
+
+  char *request_msg = malloc(sizeof(char)*(strlen(request_mask) + resource_required_length + hostname_length + 1));
+  sprintf(request_msg,
+          request_mask,
+          (resource_required_length != 0) ? resource_required : "/index.html",
+          hostname );
 
   printf( "%s\n", request_msg );
 
   int32_t request_len = strlen(request_msg);
-  int32_t bytes_sent = send(socket_descriptor, request_msg, request_len, 0);
-  if (bytes_sent != request_len)
+  int32_t total_bytes_sent = 0;
+  int32_t bytes_sent = 0;
+  do
   {
-    printf("Coudn't send entire request\n");
-    return -1;
+    int32_t attempt_size = request_len - total_bytes_sent;
+    bytes_sent = send(socket_descriptor, &request_msg[total_bytes_sent], attempt_size, 0);
+    if (bytes_sent == -1)
+    {
+        perror( "Error in send" );
+        return -1;
+    }
+    total_bytes_sent += bytes_sent;
   }
+  while (total_bytes_sent != request_len);
   free(request_msg);
 
   int32_t header_length  = 0;
