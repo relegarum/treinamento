@@ -5,6 +5,20 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <errno.h>
+
+#define PROTOCOL_SIZE     5
+#define OPERATION_SIZE    6
+#define MAX_RESOURCE_SIZE 50
+
+static const char* HeaderBadRequest    = "HTTP/1.0 400 Bad Request\r\n";
+static const char* HeaderOk            = "HTTP/1.0 200 OK\r\n";
+static const char* HeaderNotFound      = "HTTP/1.0 404 Not Found\r\n";
+static const char* HeaderInternalError = "HTTP/1.0 500 Internal Server Error\r\n";
+static const char* HeaderUnauthorized  = "HTTP/1.0 401 Unauthorized\r\n";
+static const char* HeaderWrongVerison  = "HTTP/1.0 505 HTTP Version Not Supported\r\n";
+static const char* ContentLenghtMask   = "Content-Length=%d\r\n";
 
 uint32_t get_response_size(char *first_chunk)
 {
@@ -23,7 +37,7 @@ uint32_t handle_response_status(char *http_response)
   char error_string[ 30 ];
   int32_t status = 0;
 
-  if( sscanf( http_response,"HTTP/%*s %d %s\r\n", &status, error_string) != 2 )
+  if (sscanf(http_response,"HTTP/%*s %d %s\r\n", &status, error_string) != 2)
   {
     printf("Coudn't parse HTTP Status\n");
     return -1;
@@ -226,4 +240,178 @@ int32_t handle_header(int socket_descriptor, int32_t *header_length, int32_t *co
   *content_size     = get_response_size( header_slice );
 
   return 0;
+}
+
+
+int32_t receive_request(int32_t socket_descriptor, Connection *item, const int32_t transmission_rate)
+{
+  // Read data from client (( use http_utils.c ))%
+  char buffer[transmission_rate];
+  int32_t total_bytes_received = 0;
+  int32_t bytes_received = 0;
+  while(1)
+  {
+    bytes_received = recv(socket_descriptor, buffer, sizeof(buffer), 0);
+    if (bytes_received < 0)
+    {
+      if( errno == EWOULDBLOCK || errno == EAGAIN )
+      {
+        break;
+      }
+      else
+      {
+        perror("recv");
+        return -1;
+      }
+    }
+
+    if (bytes_received == 0)
+    {
+      break;
+    }
+
+    total_bytes_received += bytes_received;
+  }
+  buffer[total_bytes_received] = '\0';
+
+  item->request = malloc(sizeof(char)*total_bytes_received);
+  strncpy(item->request, buffer, total_bytes_received + 1);
+  item->response_size = total_bytes_received;
+  item->active = 1;
+  printf("Incomming request: \n%s\n", item->request);
+
+  return 0;
+}
+
+int32_t send_response(int32_t socket_descriptor, fd_set *master_ptr, fd_set *read_fds_ptr, int32_t *greatest_descriptor, Connection *item, const int32_t transmission_rate)
+{
+  char *resource_required = "teste";
+  char *hostname          = "36574";
+  int32_t resource_required_length = strlen(resource_required);
+  int32_t hostname_length          = strlen(hostname);
+
+
+  int32_t request_size = strlen(item->header) +
+                         transmission_rate;
+
+  char *request_mask = "%s%s";
+  char *request_msg = malloc(sizeof(char)*(request_size + 1200));
+  sprintf(request_msg,
+          request_mask,
+          (resource_required_length != 0) ? resource_required : "/index.html",
+          hostname,
+          item->request);
+
+  printf( "Send:\n%s\n", request_msg );
+
+  int32_t request_len = strlen(request_msg);
+  int32_t total_bytes_sent = 0;
+  int32_t bytes_sent = 0;
+  do
+  {
+    int32_t attempt_size = request_len - total_bytes_sent;
+    bytes_sent = send(socket_descriptor, &request_msg[total_bytes_sent], attempt_size, 0);
+    if (bytes_sent == -1)
+    {
+        perror( "Error in send" );
+        return -1;
+    }
+    total_bytes_sent += bytes_sent;
+  }
+  while (total_bytes_sent != request_len);
+  free(request_msg);
+
+  printf("Socket = %d closed\n", socket_descriptor);
+  close(socket_descriptor);
+  FD_CLR(socket_descriptor, master_ptr);
+  FD_CLR(socket_descriptor, read_fds_ptr);
+
+  return 0;
+}
+
+
+void handle_request(Connection *item, char *path)
+{
+  char *index_str = "/index.html";
+  char operation[OPERATION_SIZE];
+  char resource[MAX_RESOURCE_SIZE];
+  char protocol[PROTOCOL_SIZE];
+
+  memset(operation, '\0', OPERATION_SIZE);
+  memset(resource,  '\0', MAX_RESOURCE_SIZE);
+  memset(protocol,  '\0', PROTOCOL_SIZE);
+
+  char *return_string = "..";
+
+  char *request = item->request;
+  item->resource_file = NULL;
+  item->response_size = 0;
+  if (sscanf(request, "%s %s %s\r\n", operation, resource, protocol) != 3)
+  {
+    item->header = strdup(HeaderBadRequest);
+    return;
+  }
+
+  printf("%s", operation);
+
+  if (strncmp(protocol, "HTTP/1.0", PROTOCOL_SIZE) != 0 &&
+     (strncmp(protocol, "HTTP/1.1", PROTOCOL_SIZE) != 0 ) )
+  {
+    item->header = strdup(HeaderWrongVerison);
+    return;
+  }
+
+  if (strstr(resource, return_string) != NULL)
+  {
+    item->header = strdup(HeaderBadRequest);
+    return;
+  }
+
+  if( strncmp(resource, "/", 1) == 0 ||
+      strncmp(resource, ".", 1) == 0 )
+  {
+    strncpy(resource, index_str, strlen(index_str));
+  }
+
+  const int32_t path_size     = strlen(path);
+  const int32_t resource_size = strlen(resource);
+  char  *file_name = malloc(sizeof(char) * (path_size+resource_size+1));
+  sprintf( file_name, "%s%s", path, resource);
+  FILE *teste = fopen(file_name, "rb");
+  item->resource_file = teste;
+  if (item->resource_file == NULL)
+  {
+    if (errno == EACCES)
+    {
+      item->header = strdup(HeaderUnauthorized);
+      return;
+    }
+    else if ( errno == E2BIG)
+    {
+      item->header = strdup(HeaderBadRequest);
+      return;
+    }
+    else
+    {
+      item->header = strdup(HeaderNotFound);
+      return;
+    }
+  }
+
+  struct stat buffer;
+  if (stat(file_name, &buffer) == -1 )
+  {
+    item->header = strdup(HeaderInternalError);
+    return;
+  }
+
+  int32_t contentLenghtMaskSize = strlen(ContentLenghtMask);
+  const int32_t maxLenghtStrSize = 12;
+  item->header = malloc(sizeof(char)*(strlen(HeaderOk) + contentLenghtMaskSize + maxLenghtStrSize));
+  char *headerMask = malloc(sizeof(char)*(strlen(HeaderOk) + contentLenghtMaskSize + 1));
+  sprintf(headerMask, "%s%s", HeaderOk, ContentLenghtMask );
+  sprintf(item->header, headerMask, buffer.st_size);
+  item->response_size = buffer.st_size;
+
+  return;
 }

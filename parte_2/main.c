@@ -28,6 +28,9 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
+
+#include "../http_utils.h"
 
 void *get_in_addr(struct sockaddr *sa)
 {
@@ -154,6 +157,7 @@ int main(int argc, char *argv[])
 
   printf("server: waiting for connections...\n");
 
+  const int32_t transmission_rate = BUFSIZ;
   int    greatest_file_desc;
   fd_set master;
   fd_set read_fds;
@@ -174,6 +178,7 @@ int main(int argc, char *argv[])
       success = 4;
       goto exit;
     }
+
     int32_t index = 0;
     for (;index <= greatest_file_desc; ++index)
     {
@@ -200,57 +205,28 @@ int main(int argc, char *argv[])
                         remote_ip,
                         sizeof(remote_ip));
               printf("Connection from %s -> socket_num = %d\n", remote_ip, new_socket_description);
+              if (fcntl(new_socket_description, F_SETFL, fcntl(new_socket_description, F_GETFL) | O_NONBLOCK) < 0)
+              {
+                return -1;
+              }
             }
           }
         }
         else
         {
-          // Read data from client (( use http_utils.c ))
-          char buffer[BUFSIZ];
-          int32_t bytes_received = recv(index, buffer, sizeof(buffer), 0);
-          if (bytes_received <= 0)
+          Connection item;
+         if (receive_request(index, &item, transmission_rate) == -1)
           {
-            if (bytes_received == 0)
-            {
-              printf("Socket = %d closed\n", index);
-            }
-            else
-            {
-              perror("recv");
-              success = -1;
-              goto exit;
-            }
-            close(index);
-            FD_CLR(index, &master);
-
-            buffer[bytes_received] = '\0';
-            printf("%s", buffer);
+            success = -1;
+            goto exit;
           }
+
+          handle_request(&item, path);
+          send_response(index, &master, &read_fds, &greatest_file_desc, &item, transmission_rate);
         }
       }
     }
   }
-
-  /*while(1)
-  {
-    sin_size = sizeof(client_address);
-    new_socket_description = accept(listening_sock_description,
-                                    (struct sockaddr *)&client_address,
-                                    &sin_size);
-
-    if (new_socket_description == -1)
-    {
-      perror("accept");
-      continue;
-    }
-
-    inet_ntop(client_address.ss_family,
-              get_in_addr((struct sockaddr *)&client_address),
-              client_address_string,
-              sizeof(client_address_string));
-    printf("server: go connection from %s\n", remote_ip);
-    close(new_socket_description);
-  }*/
 
   success = 0;
 exit:

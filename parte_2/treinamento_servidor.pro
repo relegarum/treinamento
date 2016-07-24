@@ -4,7 +4,7 @@ CONFIG -= app_bundle
 CONFIG -= qt
 
 SOURCES += main.c \
-    ../parte_1/http_utils.c
+    ../http_utils.c
 
 HEADERS += \
-    ../parte_1/http_utils.h
+    ../http_utils.h
