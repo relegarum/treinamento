@@ -1,0 +1,33 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.8	//
+Accepted	http_utils.h	/^  Accepted         = 202,$/;"	e	enum:HTTP_STATUS
+BadGateway	http_utils.h	/^  BadGateway       = 502,$/;"	e	enum:HTTP_STATUS
+BadRequest	http_utils.h	/^  BadRequest       = 400,$/;"	e	enum:HTTP_STATUS
+Created	http_utils.h	/^  Created          = 201,$/;"	e	enum:HTTP_STATUS
+Forbidden	http_utils.h	/^  Forbidden        = 403,$/;"	e	enum:HTTP_STATUS
+HTTP_STATUS	http_utils.h	/^enum HTTP_STATUS$/;"	g
+HTTP_UTILS_H	http_utils.h	2;"	d
+MovedPermanently	http_utils.h	/^  MovedPermanently = 301,$/;"	e	enum:HTTP_STATUS
+MovedTemporarily	http_utils.h	/^  MovedTemporarily = 302,$/;"	e	enum:HTTP_STATUS
+NoContent	http_utils.h	/^  NoContent        = 204,$/;"	e	enum:HTTP_STATUS
+NotImplemented	http_utils.h	/^  NotImplemented   = 501,$/;"	e	enum:HTTP_STATUS
+NotModified	http_utils.h	/^  NotModified      = 304,$/;"	e	enum:HTTP_STATUS
+Not_Found	http_utils.h	/^  Not_Found        = 404,$/;"	e	enum:HTTP_STATUS
+Ok	http_utils.h	/^  Ok               = 200,$/;"	e	enum:HTTP_STATUS
+ServerError	http_utils.h	/^  ServerError      = 500,$/;"	e	enum:HTTP_STATUS
+ServiceUnavaible	http_utils.h	/^  ServiceUnavaible = 503$/;"	e	enum:HTTP_STATUS
+Unauthorized	http_utils.h	/^  Unauthorized     = 401,$/;"	e	enum:HTTP_STATUS
+download_file	http_utils.c	/^int32_t download_file(int socket_descriptor, char *resource_required, int32_t transmission_rate, FILE *output_file)$/;"	f
+extract_content	http_utils.c	/^int32_t extract_content(char *http_response, char *content, int32_t content_length)$/;"	f
+get_header	http_utils.c	/^int32_t get_header(int socket_descriptor, char *resource_required, int32_t *header_length, int32_t *content_length)$/;"	f
+get_resource	http_utils.c	/^void get_resource(char *uri, char *hostname, char *resource)$/;"	f
+get_response_size	http_utils.c	/^uint32_t get_response_size(char *first_chunk)$/;"	f
+handle_arguments	main.c	/^int handle_arguments(int argc,$/;"	f
+handle_file	main.c	/^int handle_file(char* fileName, uint8_t overwrite, FILE **output)$/;"	f
+handle_header	http_utils.c	/^int32_t handle_header(int socket_descriptor, int32_t *header_length, int32_t *content_size )$/;"	f
+handle_response_status	http_utils.c	/^uint32_t handle_response_status(char *http_response)$/;"	f
+main	main.c	/^int main(int argc, char **argv)$/;"	f
