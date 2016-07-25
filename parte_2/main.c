@@ -32,16 +32,6 @@
 
 #include "../http_utils.h"
 
-void *get_in_addr(struct sockaddr *sa)
-{
-  if (sa->sa_family == AF_INET)
-  {
-    return &(((struct sockaddr_in *)sa)->sin_addr);
-  }
-
-  return &(((struct sockaddr_in6 *)sa)->sin6_addr);
-}
-
 int32_t handle_arguments(int argc, char **argv, char **port, char **path)
 {
   const int32_t index_of_executable = 0;
@@ -74,7 +64,6 @@ int main(int argc, char *argv[])
   struct addrinfo *servinfo          = NULL;
   struct addrinfo *serverinfo_ptr    = NULL;
   int32_t listening_sock_description = -1;
-  int32_t new_socket_description     = -1;
 
   char *port;
   char *path;
@@ -89,9 +78,6 @@ int main(int argc, char *argv[])
   const int32_t           true_value      = 1;
   const int32_t number_of_connections     = 100;
   struct addrinfo         hints;
-  struct sockaddr_storage client_address;
-  socklen_t               addrlen;
-  char                    remote_ip[INET6_ADDRSTRLEN];
 
 
   memset(&hints, 0, sizeof(hints));
@@ -179,6 +165,11 @@ int main(int argc, char *argv[])
       goto exit;
     }
 
+    if (verify_connection( listening_sock_description, &read_fds, &master, &greatest_file_desc) == -1 )
+    {
+      continue;
+    }
+
     int32_t index = 0;
     for (;index <= greatest_file_desc; ++index)
     {
@@ -186,43 +177,20 @@ int main(int argc, char *argv[])
       {
         if (index == listening_sock_description)
         {
-          addrlen = sizeof(client_address);
-          new_socket_description = accept(listening_sock_description,
-                                          (struct sockaddr *)&client_address,
-                                          &addrlen);
-          if (new_socket_description == -1)
-          {
-            perror("Accept");
-          }
-          else
-          {
-            FD_SET(new_socket_description, &master);
-            if (new_socket_description > greatest_file_desc)
-            {
-              greatest_file_desc = new_socket_description;
-              inet_ntop(client_address.ss_family,
-                        get_in_addr((struct sockaddr *)&client_address),
-                        remote_ip,
-                        sizeof(remote_ip));
-              printf("Connection from %s -> socket_num = %d\n", remote_ip, new_socket_description);
-              if (fcntl(new_socket_description, F_SETFL, fcntl(new_socket_description, F_GETFL) | O_NONBLOCK) < 0)
-              {
-                return -1;
-              }
-            }
-          }
+          continue;
         }
         else
         {
           Connection item;
-         if (receive_request(index, &item, transmission_rate) == -1)
+          item.socket_description = index;
+          if (receive_request(index, &item, transmission_rate) == -1)
           {
             success = -1;
             goto exit;
           }
 
           handle_request(&item, path);
-          send_response(index, &master, &read_fds, &greatest_file_desc, &item, transmission_rate);
+          send_response(index, &master, &item, transmission_rate);
         }
       }
     }

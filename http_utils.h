@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/types.h>
+#include <sys/socket.h>
 
 /* Possible response status from HTTP */
 enum HTTP_STATUS
@@ -36,6 +37,8 @@ typedef struct ConnectionStruct
   int32_t response_size;
 } Connection;
 
+void *get_in_addr(struct sockaddr *sa);
+
 uint32_t get_response_size(char *first_chunk);
 
 uint32_t handle_response_status(char *http_response);
@@ -57,6 +60,8 @@ int32_t receive_request(int32_t socket_descriptor, Connection *item, const int32
 
 void handle_request(Connection *item, char *path);
 
-int32_t send_response(int32_t socket_descriptor, fd_set *master, fd_set *read_fds, int32_t *greates_descriptor, Connection *item, const int32_t transmission_rate);
+int32_t send_response(int32_t socket_descriptor, fd_set *master, Connection *item, int32_t transmission_rate);
+
+int verify_connection(int32_t listening_socket, fd_set *read_fds, fd_set *master, int *greatest_fds );
 
 #endif // HTTP_UTILS_H
