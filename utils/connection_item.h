@@ -15,14 +15,15 @@ enum ConnectionStates
 
 typedef struct ConnectionStruct
 {
-  int32_t socket_descriptor;
+  int32_t  socket_descriptor;
   uint8_t  state;
   uint8_t  header_sent;
-  int32_t wroteData;
-  int32_t response_size;
-  char    *request;
-  FILE    *resource_file;
-  char    *header;
+  uint8_t  error;
+  uint64_t wroteData;
+  uint64_t response_size;
+  char     *request;
+  FILE     *resource_file;
+  char     *header;
 
   /*List*/
   struct ConnectionStruct *previous_ptr;

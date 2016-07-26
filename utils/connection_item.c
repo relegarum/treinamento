@@ -1,11 +1,13 @@
 #include "connection_item.h"
 #include <stdlib.h>
+#include <unistd.h>
 
 void init_connection_item(Connection *item, int socket_descriptor)
 {
   item->socket_descriptor = socket_descriptor;
   item->state              = Free;
   item->header_sent        = 0;
+  item->error              = 0;
   item->wroteData          = 0;
   item->response_size      = 0;
   item->resource_file      = NULL;
@@ -25,10 +27,19 @@ void free_connection_item(Connection *item)
   item->next_ptr           = NULL;
   item->previous_ptr       = NULL;
 
-  if (item->resource_file != NULL)
+  if (item->socket_descriptor != -1)
   {
-    fclose(item->resource_file);
-    item->resource_file = NULL;
+    close(item->socket_descriptor);
+    item->socket_descriptor = -1;
+  }
+
+  if (item->error != 1)
+  {
+    if (item->resource_file != NULL)
+    {
+      fclose(item->resource_file);
+      item->resource_file = NULL;
+    }
   }
 
   if (item->header != NULL)

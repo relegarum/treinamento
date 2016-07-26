@@ -19,7 +19,6 @@ void add_connection_in_list(ConnectionManager *manager, Connection *new_item)
 
 void remove_connection_in_list(ConnectionManager *manager, Connection *item)
 {
-
   if( item == NULL)
   {
     printf("\nNull connection cannot be removed\n");
@@ -38,7 +37,7 @@ void remove_connection_in_list(ConnectionManager *manager, Connection *item)
   {
     free_connection_item(item);
     free(item);
-    item = NULL; /*Check this*/
+    /*item = NULL; Check this*/
     manager->head = NULL;
     manager->tail = NULL;
     return;
@@ -56,7 +55,7 @@ void remove_connection_in_list(ConnectionManager *manager, Connection *item)
 
   free_connection_item(item);
   free(item);
-  item = NULL; /*Check this*/
+  /*item = NULL; Check this*/
 }
 
 void free_list(ConnectionManager *manager)
