@@ -305,6 +305,7 @@ exit:
 
   if(bad_request_file != NULL)
   {
+    printf("bad req\n");
     fclose(bad_request_file);
     bad_request_file = NULL;
   }
@@ -340,7 +341,6 @@ exit:
     close(listening_sock_description);
   }
 
-  printf("Free addrinfo\n");
   if (servinfo != NULL)
   {
     freeaddrinfo(servinfo);

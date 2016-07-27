@@ -168,20 +168,25 @@ void get_resource(char *uri, char *hostname, char *resource)
 
 int32_t download_file(int socket_descriptor, char *hostname, char *resource_required, int32_t transmission_rate, FILE *output_file)
 {
-  int32_t resource_required_length = strlen(resource_required);
-  int32_t hostname_length          = strlen(hostname);
+  uint32_t resource_required_length = strlen(resource_required);
+  uint32_t hostname_length          = strlen(hostname);
 
-  char *request_mask = "GET %s HTTP/1.0\r\n"
-                       "Host: %s\r\n"
-                       "User-Agent: AkerClient\r\n"
-                       "\r\n"
-          ;
+  const char *request_mask = "GET %s HTTP/1.0\r\n"
+                             "Host: %s\r\n"
+                             "User-Agent: AkerClient\r\n"
+                             "\r\n";
+  uint32_t request_mask_length = strlen(request_mask);
+  uint32_t request_total_size = request_mask_length +
+                               ((resource_required_length != 0) ? resource_required_length : strlen("/index.html"))+
+                               hostname_length +
+                               1;
 
-  char *request_msg = malloc(sizeof(char)*(strlen(request_mask) + resource_required_length + hostname_length + 1));
-  sprintf(request_msg,
-          request_mask,
-          (resource_required_length != 0) ? resource_required : "/index.html",
-          hostname );
+  char *request_msg = malloc(sizeof(char)*(request_total_size));
+  snprintf(request_msg,
+           request_total_size,
+           request_mask,
+           (resource_required_length != 0) ? resource_required : "/index.html",
+           hostname );
 
   printf( "%s\n", request_msg );
 
@@ -418,7 +423,7 @@ void handle_request(Connection *item, char *path)
       item->error         = 1;
       goto exit_handle;
     }
-    else if ( errno == E2BIG)
+    else if (errno == E2BIG)
     {
       item->header = strdup(HeaderBadRequest);
       item->resource_file = bad_request_file;
