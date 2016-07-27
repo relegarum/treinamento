@@ -137,7 +137,6 @@ int main(int argc, char **argv)
 {
   //setup_deamon();
   struct addrinfo *servinfo          = NULL;
-  struct addrinfo *serverinfo_ptr    = NULL;
   int32_t listening_sock_description = -1;
 
   char *port;
@@ -175,6 +174,7 @@ int main(int argc, char **argv)
     goto exit;
   }
 
+  struct addrinfo *serverinfo_ptr    = NULL;
   // Get valid socket to listen
   for (serverinfo_ptr = servinfo;
        serverinfo_ptr != NULL;
@@ -217,6 +217,7 @@ int main(int argc, char **argv)
     goto exit;
   }
   freeaddrinfo(servinfo);
+  servinfo       = NULL;
   serverinfo_ptr = NULL;
 
   if (listen(listening_sock_description, number_of_connections) == -1)
@@ -339,6 +340,7 @@ exit:
     close(listening_sock_description);
   }
 
+  printf("Free addrinfo\n");
   if (servinfo != NULL)
   {
     freeaddrinfo(servinfo);
