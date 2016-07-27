@@ -23,6 +23,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <signal.h>
+#include <time.h>
 
 #include <syslog.h>
 #include <sys/types.h>
@@ -36,6 +37,8 @@
 #include "../utils/connection_manager.h"
 #include "../utils/connection_item.h"
 #include "../utils/http_utils.h"
+
+//#include "../utils/test_suit.h"
 
 int8_t terminated = 0;
 
@@ -99,25 +102,6 @@ void setup_deamon()
   close(STDERR_FILENO);
 }
 
-/* Unit list test
-void teste_connection_manager()
-{
-  ConnectionManager manager;
-  init_list(&manager);
-  Connection *item1 = create_connection_item(1);
-  Connection *item2 = create_connection_item(2);
-  Connection *item3 = create_connection_item(3);
-  Connection *item10 = create_connection_item(10);
-
-  add_connection_in_list(&manager, item1);
-  add_connection_in_list(&manager, item2);
-  add_connection_in_list(&manager, item3);
-  add_connection_in_list(&manager, item10);
-
-  remove_connection_in_list(&manager, item1);
-
-  free_list(&manager);
-}*/
 
 void handle_sigint(int signal_number)
 {
@@ -135,6 +119,7 @@ void handle_sigint(int signal_number)
 
 int main(int argc, char **argv)
 {
+  //test_verify_path();
   //setup_deamon();
   struct addrinfo *servinfo          = NULL;
   int32_t listening_sock_description = -1;
@@ -159,7 +144,7 @@ int main(int argc, char **argv)
                                 &wrong_version_file);
 
   const int32_t           true_value      = 1;
-  const int32_t number_of_connections     = 100;
+  const int32_t number_of_connections     = 200;
   struct addrinfo         hints;
 
 
@@ -231,7 +216,7 @@ int main(int argc, char **argv)
 
   printf("server: waiting for connections...\n");
 
-  const int32_t transmission_rate = 128;
+  const int32_t transmission_rate = 1; // 1Mb/s
   int    greatest_file_desc;
   fd_set master;
   fd_set read_fds;
@@ -242,6 +227,10 @@ int main(int argc, char **argv)
   FD_ZERO(&write_fds);
   FD_SET(listening_sock_description, &master);
   greatest_file_desc = listening_sock_description;
+
+  time_t one_second_ms = 1000;
+  time_t begin;
+  time_t end;
 
   while (1)
   {
@@ -263,76 +252,59 @@ int main(int argc, char **argv)
       continue;
     }
 
-    //int32_t index = 0;
-    Connection *ptr = manager.head;
-    while (ptr != NULL)
+    time(&begin);
     {
-      if (FD_ISSET(ptr->socket_descriptor, &read_fds))
+      //int32_t index = 0;
+      Connection *ptr = manager.head;
+      while (ptr != NULL)
       {
-        if (receive_request(ptr, transmission_rate) == -1)
+        if ((ptr->state == Free ||
+             ptr->state == Receiving ) &&
+            FD_ISSET(ptr->socket_descriptor, &read_fds))
         {
-          success = -1;
-          goto exit;
+          if (receive_request(ptr, transmission_rate) == -1)
+          {
+            success = -1;
+            goto exit;
+          }
         }
 
-        handle_request(ptr, path);
-      }
+        if (ptr->state == Handling )
+        {
+          handle_request(ptr, path);
+        }
 
-      if (ptr->state == Sending &&
-          (FD_ISSET(ptr->socket_descriptor, &write_fds)) )
-      {
-        send_response(ptr, transmission_rate);
-      }
+        if (ptr->state == Sending &&
+            (FD_ISSET(ptr->socket_descriptor, &write_fds)) )
+        {
+          send_response(ptr, transmission_rate);
+        }
 
-      if (ptr->state == Sent)
-      {
-        Connection *next = ptr->next_ptr;
-        printf("Socket = %d closed\n\n", ptr->socket_descriptor);
-        close(ptr->socket_descriptor);
-        FD_CLR(ptr->socket_descriptor, &master);
-        remove_connection_in_list(&manager, ptr);
-        ptr = next;
-      }
-      else
-      {
-        ptr = ptr->next_ptr;
+        if (ptr->state == Sent)
+        {
+          Connection *next = ptr->next_ptr;
+          //printf("Socket = %d closed\n\n", ptr->socket_descriptor);
+          close(ptr->socket_descriptor);
+          FD_CLR(ptr->socket_descriptor, &master);
+          remove_connection_in_list(&manager, ptr);
+          ptr = next;
+        }
+        else
+        {
+          ptr = ptr->next_ptr;
+        }
       }
     }
+    time(&end);
+    time_t diff_trunc = difftime(begin, end) * one_second_ms;
+    time_t teste = (one_second_ms - diff_trunc)*1000;
+    usleep(teste);
   }
 
   success = 0;
 exit:
 
-  if(bad_request_file != NULL)
-  {
-    printf("bad req\n");
-    fclose(bad_request_file);
-    bad_request_file = NULL;
-  }
-
-  if (not_found_file != NULL)
-  {
-    fclose(not_found_file);
-    not_found_file = NULL;
-  }
-
-  if(internal_error_file != NULL)
-  {
-    fclose(internal_error_file);
-    internal_error_file = NULL;
-  }
-
-  if(unauthorized_file != NULL)
-  {
-    fclose(unauthorized_file);
-    unauthorized_file = NULL;
-  }
-
-  if(wrong_version_file != NULL)
-  {
-    fclose(wrong_version_file);
-    wrong_version_file = NULL;
-  }
+  clean_default_files();
 
   free_list(&manager);
 
