@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <time.h>
+#include <limits.h>
 
 #include <syslog.h>
 #include <sys/types.h>
@@ -40,19 +41,23 @@
 
 //#include "../utils/test_suit.h"
 
-int8_t terminated = 0;
+#define MAX_TIMEOUT 9999
 
-int32_t handle_arguments(int argc, char **argv, char **port, char **path)
+ConnectionManager* manager_ptr = NULL;
+int32_t* listening_socket_ptr  = NULL;
+
+int32_t handle_arguments(int argc, char **argv, char **port, char **path, int32_t* transmission_rate)
 {
-  const int32_t index_of_executable = 0;
-  const int32_t index_of_port       = 1;
-  const int32_t index_of_path       = 2;
-  const int32_t min_valid_port      = 1024;
-  const int32_t max_valid_port      = 65535;
+  const int32_t index_of_executable         = 0;
+  const int32_t index_of_port               = 1;
+  const int32_t index_of_path               = 2;
+  const int32_t index_of_transmission_rate  = 3;
+  const int32_t min_valid_port              = 1024;
+  const int32_t max_valid_port              = 65535;
 
   if (argc < 3)
   {
-    printf(" usage: %s port path", argv[index_of_executable]);
+    printf(" usage: %s port path transmission_rate", argv[index_of_executable]);
     return -1;
   }
 
@@ -65,6 +70,22 @@ int32_t handle_arguments(int argc, char **argv, char **port, char **path)
 
   *port = argv[index_of_port];
   *path = argv[index_of_path];
+
+  if (argc < 4)
+  {
+    *transmission_rate = BUFSIZ;
+    return 0;
+  }
+  else
+  {
+    char *end_ptr = "\0";
+    *transmission_rate = strtol(argv[index_of_transmission_rate], &
+                               end_ptr, 10);
+    if (*transmission_rate <= 0)
+    {
+      *transmission_rate = BUFSIZ;
+    }
+  }
 
   return 0;
 }
@@ -107,30 +128,38 @@ void handle_sigint(int signal_number)
 {
   if (signal_number == SIGINT)
   {
-    terminated = 1;
+    clean_default_files();
+
+  }
+  if (manager_ptr != NULL)
+  {
+    free_list(manager_ptr);
   }
 
-  if (signal_number == SIGABRT)
+
+  if (( listening_socket_ptr != NULL ) &&
+      (*listening_socket_ptr != -1))
   {
-    printf("Abort!");
-    terminated = 1;
+    close(*listening_socket_ptr);
   }
+
+  exit(1);
 }
 
 int main(int argc, char **argv)
 {
-  //test_verify_path();
   //setup_deamon();
-  struct addrinfo *servinfo          = NULL;
   int32_t listening_sock_description = -1;
+  int32_t transmission_rate    = 0; // 1Mb/s
 
   char *port;
   char *path;
 
   ConnectionManager manager = create_manager();
+  manager_ptr = &manager;
 
   int success = 0;
-  if (handle_arguments(argc, argv, &port, &path) == -1)
+  if (handle_arguments(argc, argv, &port, &path, &transmission_rate) == -1)
   {
     success = 1;
     goto exit;
@@ -143,67 +172,12 @@ int main(int argc, char **argv)
                                 &unauthorized_file,
                                 &wrong_version_file);
 
-  const int32_t           true_value      = 1;
   const int32_t number_of_connections     = 200;
-  struct addrinfo         hints;
-
-
-  memset(&hints, 0, sizeof(hints));
-  hints.ai_family   = AF_UNSPEC;
-  hints.ai_socktype = SOCK_STREAM;
-  hints.ai_flags    = AI_PASSIVE;
-
-  if ((success = getaddrinfo(NULL, port, &hints, &servinfo)) != 0)
+  if( setup_listening_connection(port, &listening_sock_description) == -1 )
   {
-    printf("Error in getaddrinfo: %s\n", gai_strerror(success));
-    goto exit;
-  }
-
-  struct addrinfo *serverinfo_ptr    = NULL;
-  // Get valid socket to listen
-  for (serverinfo_ptr = servinfo;
-       serverinfo_ptr != NULL;
-       serverinfo_ptr = serverinfo_ptr->ai_next)
-  {
-    if ((listening_sock_description = socket(serverinfo_ptr->ai_family,
-                                             serverinfo_ptr->ai_socktype,
-                                             serverinfo_ptr->ai_protocol)) == -1)
-    {
-      perror("Server socket\n");
-      continue;
-    }
-
-    if ((success = setsockopt(listening_sock_description,
-                              SOL_SOCKET,
-                              SO_REUSEADDR,
-                              &true_value,
-                              sizeof(true_value))) == -1)
-    {
-      perror("setsockopt");
-      goto exit;
-    }
-
-    if (bind(listening_sock_description,
-             serverinfo_ptr->ai_addr,
-             serverinfo_ptr->ai_addrlen) == -1)
-    {
-      close(listening_sock_description);
-      perror("server bind");
-      continue;
-    }
-
-    break;
-  }
-
-  if (serverinfo_ptr == NULL)
-  {
-    printf("Failed to bind\n");
     success = -1;
     goto exit;
   }
-  freeaddrinfo(servinfo);
-  servinfo       = NULL;
-  serverinfo_ptr = NULL;
 
   if (listen(listening_sock_description, number_of_connections) == -1)
   {
@@ -211,39 +185,39 @@ int main(int argc, char **argv)
     success = -1;
     goto exit;
   }
+  listening_socket_ptr = &listening_sock_description;
 
   signal(SIGINT, handle_sigint);
 
   printf("server: waiting for connections...\n");
 
-  const int32_t transmission_rate = 1; // 1Mb/s
   int    greatest_file_desc;
   fd_set master;
   fd_set read_fds;
   fd_set write_fds;
+  fd_set except_fds;
 
   FD_ZERO(&master);
   FD_ZERO(&read_fds);
   FD_ZERO(&write_fds);
+  FD_ZERO(&except_fds);
   FD_SET(listening_sock_description, &master);
   greatest_file_desc = listening_sock_description;
 
-  time_t one_second_ms = 1000;
-  time_t begin;
-  time_t end;
+  struct timeval timeout;
+  timeout.tv_sec = MAX_TIMEOUT;
+  timeout.tv_usec = 0;
 
   while (1)
   {
-    if (terminated)
-    {
-      goto exit;
-    }
-    read_fds  = master;
-    write_fds = master;
-    if (select(greatest_file_desc + 1, &read_fds, &write_fds, NULL, NULL) == -1)
+    read_fds   = master;
+    write_fds  = master;
+    except_fds = master;
+    int ret = select(greatest_file_desc + 1, &read_fds, &write_fds, &except_fds, &timeout) == -1;
+    if ((ret == -1) || FD_ISSET(listening_sock_description, &except_fds) )
     {
       perror("select error");
-      success = 4;
+      success = -1; /* Change this number */
       goto exit;
     }
 
@@ -252,9 +226,7 @@ int main(int argc, char **argv)
       continue;
     }
 
-    time(&begin);
     {
-      //int32_t index = 0;
       Connection *ptr = manager.head;
       while (ptr != NULL)
       {
@@ -295,10 +267,14 @@ int main(int argc, char **argv)
         }
       }
     }
-    time(&end);
-    time_t diff_trunc = difftime(begin, end) * one_second_ms;
-    time_t teste = (one_second_ms - diff_trunc)*1000;
-    usleep(teste);
+
+    if (timeout.tv_sec == MAX_TIMEOUT - 1)
+    {
+      time_t teste = timeout.tv_usec;
+      usleep(teste);
+    }
+    timeout.tv_sec = MAX_TIMEOUT;
+    timeout.tv_usec = 0;
   }
 
   success = 0;
@@ -311,11 +287,6 @@ exit:
   if (listening_sock_description != -1)
   {
     close(listening_sock_description);
-  }
-
-  if (servinfo != NULL)
-  {
-    freeaddrinfo(servinfo);
   }
 
   return success;
