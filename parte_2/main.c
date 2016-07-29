@@ -25,11 +25,13 @@
 #include <signal.h>
 #include <time.h>
 #include <limits.h>
+#include <dirent.h>
 
 #include <syslog.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
@@ -38,8 +40,6 @@
 #include "../utils/connection_manager.h"
 #include "../utils/connection_item.h"
 #include "../utils/http_utils.h"
-
-//#include "../utils/test_suit.h"
 
 #define MAX_TIMEOUT 9999
 
@@ -57,19 +57,26 @@ int32_t handle_arguments(int argc, char **argv, char **port, char **path, int32_
 
   if (argc < 3)
   {
-    printf(" usage: %s port path transmission_rate", argv[index_of_executable]);
+    printf(" usage: %s port path transmission_rate\n", argv[index_of_executable]);
     return -1;
   }
 
   int32_t port_value = atoi(argv[index_of_port]);
   if( port_value < min_valid_port || port_value > max_valid_port )
   {
-    printf(" invalid value for port: %d", port_value );
+    printf(" invalid value for port: %d! Please use a port between - 1024 and 65535.\n", port_value );
     return -1;
   }
 
   *port = argv[index_of_port];
   *path = argv[index_of_path];
+
+  DIR *dir = opendir(*path);
+  if (dir == NULL)
+  {
+    printf(" invalid path! Please use a valid path!\n");
+    return -1;
+  }
 
   if (argc < 4)
   {
@@ -123,7 +130,6 @@ void setup_deamon()
   close(STDERR_FILENO);
 }
 
-
 void handle_sigint(int signal_number)
 {
   if (signal_number == SIGINT)
@@ -146,14 +152,15 @@ void handle_sigint(int signal_number)
   exit(1);
 }
 
+
 int main(int argc, char **argv)
 {
   /*setup_deamon();*/
   int32_t listening_sock_description = -1;
   int32_t transmission_rate    = 0;
 
-  char *port;
-  char *path;
+  char *port = NULL;
+  char *path = NULL;
 
   ConnectionManager manager = create_manager();
   manager_ptr = &manager;
@@ -205,27 +212,39 @@ int main(int argc, char **argv)
   greatest_file_desc = listening_sock_description;
 
   struct timeval timeout;
+  struct timeval lowest_time;
   timeout.tv_sec = MAX_TIMEOUT;
   timeout.tv_usec = 0;
 
+  /*time_t begin;
+  time_t end;*/
   while (1)
   {
+
     read_fds   = master;
     write_fds  = master;
     except_fds = master;
-    int ret = select(greatest_file_desc + 1, &read_fds, &write_fds, &except_fds, &timeout) == -1;
+    int ret = select(greatest_file_desc + 1,
+                     &read_fds,
+                     &write_fds,
+                     &except_fds,
+                     &timeout);
+
     if ((ret == -1) || FD_ISSET(listening_sock_description, &except_fds) )
     {
       perror("select error");
-      success = -1; /* Change this number */
+      success = -1;
       goto exit;
     }
 
-    if (verify_connection(&manager, listening_sock_description, &read_fds, &master, &greatest_file_desc) == -1)
+    if (verify_connection(&manager,
+                          listening_sock_description,
+                          &read_fds,
+                          &master,
+                          &greatest_file_desc) == -1)
     {
       continue;
     }
-
 
     Connection *ptr = manager.head;
     while (ptr != NULL)
@@ -241,21 +260,38 @@ int main(int argc, char **argv)
         }
       }
 
-      if (ptr->state == Handling )
+      if (ptr->state == Handling)
       {
-        handle_request(ptr, path);
+        handle_request(ptr, path); 
       }
 
-      if (ptr->state == Sending &&
-          (FD_ISSET(ptr->socket_descriptor, &write_fds)) )
+      if (FD_ISSET(ptr->socket_descriptor, &write_fds))
       {
-        send_response(ptr, transmission_rate);
+        if (ptr->state == SendingHeader)
+        {
+          send_header(ptr, transmission_rate);
+        }
+
+        if (ptr->state == SendingResource)
+        {
+          send_response(ptr, transmission_rate);
+        }
+
+        gettimeofday(&(ptr->last_connection_time), 0);
+      }
+
+      if (ptr->partial_wrote + BUFSIZ > transmission_rate)
+      {
+        if (timercmp(&(ptr->last_connection_time), &lowest_time, <) == 0)
+        {
+          lowest_time.tv_sec  = ptr->last_connection_time.tv_sec;
+          lowest_time.tv_usec = ptr->last_connection_time.tv_usec;
+        }
       }
 
       if (ptr->state == Sent)
       {
         Connection *next = ptr->next_ptr;
-        //printf("Socket = %d closed\n\n", ptr->socket_descriptor);
         close(ptr->socket_descriptor);
         FD_CLR(ptr->socket_descriptor, &master);
         remove_connection_in_list(&manager, ptr);
@@ -267,14 +303,35 @@ int main(int argc, char **argv)
       }
     }
 
+    if (manager.size != 0)
+    {
+      struct timeval now;
+      gettimeofday(&now, 0);
 
-    if (timeout.tv_sec == MAX_TIMEOUT - 1)
+      struct timeval one_second_later;
+      one_second_later.tv_sec = lowest_time.tv_sec + 1;
+      one_second_later.tv_usec = lowest_time.tv_usec;
+      if( timercmp(&now, &one_second_later, <) ==0)
+      {
+        struct timeval time_to_sleep;
+        timersub(&one_second_later, &now, &time_to_sleep);
+        usleep(time_to_sleep.tv_usec);
+      }
+
+    }
+    else
+    {
+      timeout.tv_sec  = 99999999999;
+      timeout.tv_usec = lowest_time.tv_usec;
+    }
+
+    /*if (timeout.tv_sec == MAX_TIMEOUT - 1)
     {
       time_t teste = timeout.tv_usec;
       usleep(teste);
     }
     timeout.tv_sec = MAX_TIMEOUT;
-    timeout.tv_usec = 0;
+    timeout.tv_usec = 0;*/
   }
 
   success = 0;
