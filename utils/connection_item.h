@@ -35,6 +35,7 @@ typedef struct ConnectionStruct
   uint64_t        read_data;
   uint64_t        wrote_data;
   uint64_t        response_size;
+  uint64_t        partial_read;
   uint32_t        partial_wrote;
   char            buffer[BUFSIZ];
   char            *request;
@@ -60,6 +61,7 @@ int32_t send_header(Connection *item, const uint32_t transmission_rate);
 int32_t send_resource(Connection *item, const int32_t transmission_rate);
 int32_t get_resource_data(Connection *item, char *file_name, char *mime);
 void setup_header(Connection *item, char *mime);
+int8_t is_active(Connection *item);
 
 
 void free_connection_item(Connection *item);

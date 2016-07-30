@@ -52,6 +52,7 @@ void init_connection_item(Connection *item, int socket_descriptor)
   item->wrote_data           = 0;
   item->read_data            = 0;
   item->response_size        = 0;
+  item->partial_read         = 0;
   item->partial_wrote        = 0;
   item->buffer[0]            = '\0';
   item->resource_file        = NULL;
@@ -70,6 +71,7 @@ void free_connection_item(Connection *item)
   item->header_sent          = 0;
   item->read_data            = 0;
   item->wrote_data           = 0;
+  item->partial_read         = 0;
   item->partial_wrote        = 0;
   item->response_size        = 0;
   item->buffer[0]            = '\0';
@@ -116,7 +118,6 @@ Connection *create_connection_item(int socket_descriptor)
 
 int32_t receive_request(Connection *item, const uint32_t transmission_rate)
 {
-  item->state = Receiving;
   item->request = realloc(item->request, sizeof(char)*(item->read_data + transmission_rate + 1));
 
   char *carriage = item->request + item->read_data;
@@ -150,6 +151,7 @@ int32_t receive_request(Connection *item, const uint32_t transmission_rate)
 
     total_bytes_received += bytes_received;
     item->read_data      += bytes_received;
+    item->partial_read   += bytes_received;
     carriage             += bytes_received; /*&buffer[total_bytes_received]*/
   } while((transmission_rate != total_bytes_received));
 
@@ -485,3 +487,16 @@ void setup_header(Connection *item, char *mime)
   free(headerMask);
 }
 
+
+
+int8_t is_active(Connection *item)
+{
+  if (item->state == SendingHeader   ||
+      item->state == SendingResource ||
+      item->state == Receiving )
+  {
+    return 1;
+  }
+
+  return 0;
+}
