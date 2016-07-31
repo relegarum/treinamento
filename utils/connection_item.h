@@ -23,7 +23,9 @@ enum ConnectionStates
   SendingHeader     =  2,
   SendingResource   =  3,
   Sent              =  4,
-  Handling          =  5
+  Handling          =  5,
+  ReadingFromFile   =  6,
+  WritingIntoFile   =  7
 };
 
 typedef struct ConnectionStruct
@@ -55,6 +57,8 @@ Connection *create_connection_item(int socket_descriptor);
 int32_t receive_request_blocking(Connection *item);
 int32_t receive_request(Connection *item, const uint32_t transmission_rate);
 void handle_request(Connection *item, char *path);
+int32_t read_data_from_file(Connection *item, const uint32_t rate);
+void wrote_data_into_file(char *buffer, const uint32_t rate, FILE *resource_file);
 int32_t send_response(Connection *item, uint32_t transmission_rate);
 int32_t send_header_blocking(Connection *item);
 int32_t send_header(Connection *item, const uint32_t transmission_rate);

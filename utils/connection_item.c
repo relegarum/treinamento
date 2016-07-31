@@ -255,7 +255,8 @@ void handle_request(Connection *item, char *path)
   char *request = item->request;
   item->resource_file = NULL;
   item->response_size = 0;
-  if (sscanf(request, "%5s %49s %8s\r\n", operation, resource, protocol) != 3) // OPERATION_SIZE, MAX_RESOURCE_SIZE, PROTOCOL_SIZE
+  /* OPERATION_SIZE, MAX_RESOURCE_SIZE, PROTOCOL_SIZE */
+  if (sscanf(request, "%5s %49s %8s\r\n", operation, resource, protocol) != 3)
   {
     item->header = strdup(HeaderBadRequest);
     item->resource_file = bad_request_file;
@@ -415,14 +416,9 @@ int32_t send_resource(Connection *item, const int32_t transmission_rate)
 
   int32_t socket_descriptor = item->socket_descriptor;
 
-  int32_t bytes_read = 0;
-  int32_t bytes_sent = 0;
-  fseek(item->resource_file, item->wrote_data, SEEK_SET);
 
-  bytes_read = fread(item->buffer,
-                     sizeof(char),
-                     rate,
-                     item->resource_file);
+  int32_t bytes_sent = 0;
+  int32_t bytes_read = read_data_from_file(item, rate);
 
   if (bytes_read > 0)
   {
@@ -482,8 +478,20 @@ void setup_header(Connection *item, char *mime)
   char *headerMask = malloc(sizeof(char) * (header_mask_size)); // \r\n
 
 
-  snprintf(headerMask, header_mask_size, "%s%s%s%s\r\n", HeaderOk, ContentLenghtMask, ServerStr, ContentTypeStr);
-  snprintf(item->header, header_size, headerMask, item->response_size, mime);
+  snprintf(headerMask,
+           header_mask_size,
+           "%s%s%s%s\r\n",
+           HeaderOk,
+           ContentLenghtMask,
+           ServerStr,
+           ContentTypeStr);
+
+  snprintf(item->header,
+           header_size,
+           headerMask,
+           item->response_size,
+           mime);
+
   free(headerMask);
 }
 
@@ -499,4 +507,21 @@ int8_t is_active(Connection *item)
   }
 
   return 0;
+}
+
+
+void wrote_data_into_file(char *buffer, const uint32_t rate, FILE *resource_file)
+{
+  fwrite( buffer, sizeof(char), rate, resource_file);
+}
+
+
+int32_t read_data_from_file(Connection *item, const uint32_t rate)
+{
+  fseek(item->resource_file, item->wrote_data, SEEK_SET);
+
+  return  fread(item->buffer,
+                sizeof(char),
+                rate,
+                item->resource_file);
 }
