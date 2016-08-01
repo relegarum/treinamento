@@ -2,6 +2,9 @@
 #define REQUEST_LIST_H
 #include <stdio.h>
 #include <stdint.h>
+#include <sys/un.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 
 enum Operation
 {
@@ -14,8 +17,13 @@ typedef struct request_list_node_struct
 {
   FILE     *file;
   char     *buffer;
+  uint32_t id;
   uint8_t  operation;
   uint32_t data_size;
+
+  /*SOCK_DGRAM*/
+  int    datagram_socket;
+  struct sockaddr_un name;
 
   /*list*/
   struct request_list_node_struct *previous_ptr;
@@ -26,11 +34,13 @@ typedef struct request_list_node_struct
 void init_node(request_list_node *this,
                FILE *file,
                char* buffer,
+               uint32_t id,
                uint32_t data_size,
                uint8_t operation);
 
 request_list_node* create_request(FILE* file,
                                  char* buffer,
+                                 uint32_t id,
                                  uint32_t data_size,
                                  uint8_t operation);
 

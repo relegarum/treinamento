@@ -13,10 +13,12 @@ typedef struct thread_struct
   pthread_t   pthread;
 } thread;
 
+
 void init_thread(thread *this, request_manager *manager, int32_t id);
 void start_thread(thread *this);
-void clean_thread(thread *this);
+/*void clean_thread(thread *this);*/
 void *do_thread(void *this);
 void handle_request_item(request_list_node *item);
+
 
 #endif /* THREAD_H*/
