@@ -3,18 +3,20 @@
 #include <pthread.h>
 #include <stdint.h>
 
-#include "connection_item.h"
+#include "request_manager.h"
 
 typedef struct thread_struct
 {
-  Connection *item;
+  request_manager *manager;
   int32_t     id;
   int32_t     ret;
-  pthread_t   p_thread;
+  pthread_t   pthread;
 } thread;
 
-void init_thread(thread *this, int32_t id);
+void init_thread(thread *this, request_manager *manager, int32_t id);
 void start_thread(thread *this);
 void clean_thread(thread *this);
+void *do_thread(void *this);
+void handle_request_item(request_list_node *item);
 
-#endif // THREAD_H
+#endif /* THREAD_H*/

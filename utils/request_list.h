@@ -29,7 +29,7 @@ void init_node(request_list_node *this,
                uint32_t data_size,
                uint8_t operation);
 
-request_list_node create_request(FILE* file,
+request_list_node* create_request(FILE* file,
                                  char* buffer,
                                  uint32_t data_size,
                                  uint8_t operation);

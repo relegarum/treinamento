@@ -9,8 +9,8 @@ typedef struct request_manager_struct
   request_list_node *head;
   request_list_node *tail;
   uint32_t           size;
-  pthread_rwlock_t   lock;
   pthread_mutex_t    mutex;
+  pthread_cond_t     conditional_variable;
 }request_manager;
 
 request_manager create_request_manager();

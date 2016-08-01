@@ -297,6 +297,11 @@ int main(int argc, char **argv)
             send_header(ptr, transmission_rate);
           }
 
+          if (ptr->state == ReadingFromFile)
+          {
+            read_data_from_file(item, transmission_rate);
+          }
+
           if (ptr->state == SendingResource)
           {
             send_response(ptr, transmission_rate);

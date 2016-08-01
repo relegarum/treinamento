@@ -118,7 +118,9 @@ Connection *create_connection_item(int socket_descriptor)
 
 int32_t receive_request(Connection *item, const uint32_t transmission_rate)
 {
-  item->request = realloc(item->request, sizeof(char)*(item->read_data + transmission_rate + 1));
+  item->request = realloc(item->request,
+                          sizeof(char)*(item->read_data +
+                                        transmission_rate + 1));
 
   char *carriage = item->request + item->read_data;
 
