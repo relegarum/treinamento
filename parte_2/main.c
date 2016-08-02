@@ -51,7 +51,11 @@ ConnectionManager* manager_ptr = NULL;
 request_manager*   request_manager_pr = NULL;
 int32_t* listening_socket_ptr  = NULL;
 
-int32_t handle_arguments(int argc, char **argv, char **port, char **path, int32_t* transmission_rate)
+int32_t handle_arguments(int argc,
+                         char **argv,
+                         char **port,
+                         char **path,
+                         int32_t* transmission_rate)
 {
   const int32_t index_of_executable         = 0;
   const int32_t index_of_port               = 1;
@@ -62,14 +66,16 @@ int32_t handle_arguments(int argc, char **argv, char **port, char **path, int32_
 
   if (argc < 3)
   {
-    printf(" usage: %s port path transmission_rate\n", argv[index_of_executable]);
+    printf(" usage: %s port path transmission_rate\n",
+           argv[index_of_executable]);
     return -1;
   }
 
   int32_t port_value = atoi(argv[index_of_port]);
   if( port_value < min_valid_port || port_value > max_valid_port )
   {
-    printf(" invalid value for port: %d! Please use a port between - 1024 and 65535.\n", port_value );
+    printf(" invalid value for port: %d!\n"
+           " Please use a port between - 1024 and 65535.\n", port_value );
     return -1;
   }
 
@@ -86,6 +92,7 @@ int32_t handle_arguments(int argc, char **argv, char **port, char **path, int32_
 
   if (argc < 4)
   {
+    printf(" Transmission Rate not passed, setting 8kbps as default\n");
     *transmission_rate = BUFSIZ;
     return 0;
   }
@@ -96,6 +103,7 @@ int32_t handle_arguments(int argc, char **argv, char **port, char **path, int32_
                                 end_ptr, 10);
     if (*transmission_rate <= 0)
     {
+      printf(" Transmission Rate unknown, setting 8kbps as default\n");
       *transmission_rate = BUFSIZ;
     }
   }
@@ -160,7 +168,7 @@ void handle_sigint(int signal_number)
     close(*listening_socket_ptr);
   }
 
-  pthread_exit(NULL);
+  exit(1);
 }
 
 void setup_threads(thread *thread_pool, const uint32_t pool_size, request_manager *manager)
@@ -224,7 +232,8 @@ int main(int argc, char **argv)
                                 &not_found_file,
                                 &internal_error_file,
                                 &unauthorized_file,
-                                &wrong_version_file);
+                                &wrong_version_file,
+                                &not_implemented_file);
 
   const int32_t number_of_connections     = 200;
   if( setup_listening_connection(port, &listening_sock_description) == -1 )
@@ -332,7 +341,7 @@ int main(int argc, char **argv)
 
       if (ptr->state == Handling)
       {
-        handle_request(ptr, path); 
+        handle_request(ptr, path);
       }
 
       if (FD_ISSET(ptr->socket_descriptor, &write_fds))
@@ -350,15 +359,8 @@ int main(int argc, char **argv)
             send_header(ptr, transmission_rate);
           }
 
-          if (ptr->state == ReadingFromFile)
-          {
-            read_data_from_file(ptr, transmission_rate);
-          }
-
           if (ptr->state == SendingResource)
           {
-            /*request_list_node *node = create_request(ptr->resource_file, ptr->buffer, ptr->id, BUFSIZ, Read);
-            add_request_in_list(&req_manager, node);*/
             send_response(ptr, transmission_rate);
           }
 
@@ -370,6 +372,17 @@ int main(int argc, char **argv)
             ptr->partial_wrote = 0;
           }
         }
+      }
+
+      if (ptr->state == ReadingFromFile)
+      {
+        queue_request_to_read(ptr, &req_manager, transmission_rate);
+        //read_data_from_file(ptr, transmission_rate);
+      }
+
+      if (ptr->state == WaitingFromIO)
+      {
+        receive_from_thread(ptr, transmission_rate);
       }
 
       if (timercmp(&(ptr->last_connection_time), &lowest, <))

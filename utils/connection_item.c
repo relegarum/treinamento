@@ -21,24 +21,25 @@
 #define MAX_ERROR_STR_SIZE    30
 #define PROTOCOL_SIZE         9
 #define OPERATION_SIZE        6
-#define MAX_RESOURCE_SIZE     50
+#define MAX_RESOURCE_SIZE     PATH_MAX
 #define MAX_LONG_STR_SIZE     10 /* 4294967295 */
 #define MAX_REQUEST_MASK_SIZE 23 /* GET %s HTTP/1.0\r\n\r\n */
 #define MAX_MIME_SIZE         128
 #define UNKNOWN_MIME_SIZE     24
 
-const char *HeaderBadRequest    = "HTTP/1.0 400 Bad Request\r\n\r\n";
-const char *HeaderOk            = "HTTP/1.0 200 OK\r\n";
-const char *HeaderNotFound      = "HTTP/1.0 404 Not Found\r\n\r\n";
-const char *HeaderInternalError = "HTTP/1.0 500 Internal Server Error\r\n\r\n";
-const char *HeaderUnauthorized  = "HTTP/1.0 401 Unauthorized\r\n\r\n";
-const char *HeaderWrongVersion  = "HTTP/1.0 505 HTTP Version Not Supported\r\n\r\n";
-const char *ContentLenghtMask   = "Content-Length: %lld\r\n";
-const char *ContentTypeStr      = "Content-Type: %s\r\n";
-const char *UnknownTypeStr      = "application/octet-stream";
-const char *ServerStr           = "Server: Aker\r\n";
-const char *HTTP10Str           = "HTTP/1.0";
-const char *HTTP11Str           = "HTTP/1.1";
+const char *HeaderBadRequest     = "HTTP/1.0 400 Bad Request\r\n\r\n";
+const char *HeaderOk             = "HTTP/1.0 200 OK\r\n";
+const char *HeaderNotFound       = "HTTP/1.0 404 Not Found\r\n\r\n";
+const char *HeaderInternalError  = "HTTP/1.0 500 Internal Server Error\r\n\r\n";
+const char *HeaderUnauthorized   = "HTTP/1.0 401 Unauthorized\r\n\r\n";
+const char *HeaderWrongVersion   = "HTTP/1.0 505 HTTP Version Not Supported\r\n\r\n";
+const char *HeaderNotImplemented = "HTTP/1.0 501 HTTP Not Implemented\r\n\r\n";
+const char *ContentLenghtMask    = "Content-Length: %lld\r\n";
+const char *ContentTypeStr       = "Content-Type: %s\r\n";
+const char *UnknownTypeStr       = "application/octet-stream";
+const char *ServerStr            = "Server: Aker\r\n";
+const char *HTTP10Str            = "HTTP/1.0";
+const char *HTTP11Str            = "HTTP/1.1";
 
 const char * const EndOfHeader    = "\r\n\r\n";
 const char * const RequestMsgMask = "GET %s HTTP/1.0\r\n\r\n";
@@ -62,6 +63,7 @@ void init_connection_item(Connection *item, int socket_descriptor, uint32_t id)
   item->header               = NULL;
   item->next_ptr             = NULL;
   item->previous_ptr         = NULL;
+  item->datagram_socket      = -1;
 
   item->last_connection_time.tv_sec = 0;
   item->last_connection_time.tv_usec = 0;
@@ -110,6 +112,12 @@ void free_connection_item(Connection *item)
   {
     free(item->request);
     item->request = NULL;
+  }
+
+  if (item->datagram_socket != -1)
+  {
+    close(item->datagram_socket);
+    item->datagram_socket = -1;
   }
 }
 
@@ -249,19 +257,29 @@ void handle_request(Connection *item, char *path)
   char resource[MAX_RESOURCE_SIZE];
   char protocol[PROTOCOL_SIZE];
   char mime[MAX_MIME_SIZE];
+  char file_name[PATH_MAX];
 
   memset(operation, '\0', OPERATION_SIZE);
   memset(resource,  '\0', MAX_RESOURCE_SIZE);
   memset(protocol,  '\0', PROTOCOL_SIZE);
+  memset(file_name,  '\0', PROTOCOL_SIZE);
 
   char *request = item->request;
   item->resource_file = NULL;
   item->response_size = 0;
   /* OPERATION_SIZE, MAX_RESOURCE_SIZE, PROTOCOL_SIZE */
-  if (sscanf(request, "%5s %49s %8s\r\n", operation, resource, protocol) != 3)
+  if (sscanf(request, "%5s %4095s %8s\r\n", operation, resource, protocol) != 3)
   {
     item->header = strdup(HeaderBadRequest);
     item->resource_file = bad_request_file;
+    item->error = 1;
+    goto exit_handle;
+  }
+
+  if (strncmp(operation, "GET", OPERATION_SIZE) != 0)
+  {
+    item->header = strdup(HeaderNotImplemented);
+    item->resource_file = not_implemented_file;
     item->error = 1;
     goto exit_handle;
   }
@@ -275,7 +293,14 @@ void handle_request(Connection *item, char *path)
     goto exit_handle;
   }
 
-  char file_name[PATH_MAX];
+  if (resource[0] != '/')
+  {
+    item->header = strdup(HeaderBadRequest);
+    item->resource_file = bad_request_file;
+    item->error = 1;
+    goto exit_handle;
+  }
+
   if (verify_file_path(path, resource, file_name) != 0)
   {
     item->header = strdup(HeaderNotFound);
@@ -331,14 +356,27 @@ int32_t get_resource_data(Connection *item, char *file_name, char *mime)
     item->error = 1;
     return -1;
   }
+
+  if (!S_ISREG(buffer.st_mode))
+  {
+    item->header = strdup(HeaderBadRequest);
+    fclose(item->resource_file);
+    item->resource_file = NULL;
+    item->error = 1;
+    return -1;
+  }
+
   uint64_t size = buffer.st_size;
   item->response_size = size;
-  uint32_t file_name_size = strlen(file_name);
-  if ( file_name_size != 0)
+  if (file_name != NULL)
   {
-    if (get_file_mime(file_name_size, file_name, mime) != 0)
+    uint32_t file_name_size = strlen(file_name);
+    if (file_name_size != 0)
     {
-      strncpy(mime, UnknownTypeStr, UNKNOWN_MIME_SIZE);
+      if (get_file_mime(file_name_size, file_name, mime) != 0)
+      {
+        strncpy(mime, UnknownTypeStr, UNKNOWN_MIME_SIZE);
+      }
     }
   }
   return 0;
@@ -538,13 +576,58 @@ int32_t read_data_from_file(Connection *item, const uint32_t transmission_rate)
 
 void queue_request_to_read(Connection *item, 
                            request_manager *manager, 
-                           const uint32_t rate)
+                           const uint32_t transmission_rate)
 {
+  int socket_pair[2];
+  if (socketpair(AF_UNIX, SOCK_DGRAM, 0, socket_pair))
+  {
+    perror("socketPair");
+  }
+
+  /** Set connection as nonblock*/
+  if (fcntl(socket_pair[0], F_SETFL, fcntl(socket_pair[0], F_GETFL) | O_NONBLOCK) < 0)
+  {
+    perror("fcntl");
+  }
+  item->datagram_socket = socket_pair[0];
+
+
+  uint32_t rate = (BUFSIZ < transmission_rate)? BUFSIZ - 1: transmission_rate;
   request_list_node *node = create_request(item->resource_file,
                                            item->buffer,
                                            item->id,
-                                           rate,
+                                           socket_pair[1],
+                                           rate + 1,
                                            item->wrote_data,
                                            Read);
   add_request_in_list(manager, node);
+  item->state = WaitingFromIO;
+}
+
+void receive_from_thread(Connection *item, const uint32_t transmission_rate)
+{
+  char buffer[BUFSIZ];
+  uint32_t rate = (BUFSIZ - 1 < transmission_rate)? BUFSIZ - 1: transmission_rate;
+  int32_t read_data = read(item->datagram_socket, buffer, rate);
+  if (read_data < 0)
+  {
+    if (errno == EAGAIN ||
+        errno == EWOULDBLOCK)
+    {
+      return;
+    }
+
+    perror("read error");
+    return;
+  }
+  if (buffer[0] == '\0')
+  {
+    perror("read error");
+  }
+
+  /*printf("%s", item->buffer);*/
+  close(item->datagram_socket);
+  strncpy(item->buffer, buffer, rate);
+  item->read_file_data = read_data;
+  item->state = SendingResource;
 }
