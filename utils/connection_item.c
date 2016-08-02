@@ -54,6 +54,7 @@ void init_connection_item(Connection *item, int socket_descriptor, uint32_t id)
   item->response_size        = 0;
   item->partial_read         = 0;
   item->partial_wrote        = 0;
+  item->read_file_data       = 0;
   item->id                   = id;
   item->buffer[0]            = '\0';
   item->resource_file        = NULL;
@@ -75,6 +76,7 @@ void free_connection_item(Connection *item)
   item->wrote_data           = 0;
   item->partial_read         = 0;
   item->partial_wrote        = 0;
+  item->read_file_data       = 0;
   item->response_size        = 0;
   item->buffer[0]            = '\0';
   item->next_ptr             = NULL;
@@ -223,11 +225,6 @@ int32_t receive_request_blocking(Connection *item)
 
 int32_t send_response(Connection *item, uint32_t transmission_rate)
 {
-  if (item->resource_file == NULL)
-  {
-    item->state = Sent;
-    return -1;
-  }
 
   if (send_resource(item, transmission_rate) == -1)
   {
@@ -237,6 +234,7 @@ int32_t send_response(Connection *item, uint32_t transmission_rate)
 
   if (item->wrote_data != item->response_size)
   {
+    item->state = ReadingFromFile;
     return 0;
   }
 
@@ -406,7 +404,7 @@ int32_t send_header(Connection *item, const uint32_t transmission_rate)
 
   if (item->wrote_data == header_size)
   {
-    item->state = SendingResource;
+    item->state = ReadingFromFile;
     item->wrote_data  = 0;
   }
 
@@ -417,13 +415,10 @@ int32_t send_resource(Connection *item, const int32_t transmission_rate)
 {
   int ret = 0;
   uint32_t rate = (BUFSIZ < transmission_rate)? BUFSIZ: transmission_rate;
-
-  int32_t socket_descriptor = item->socket_descriptor;
-
+  int32_t bytes_read = item->read_file_data;
 
   int32_t bytes_sent = 0;
-  int32_t bytes_read = read_data_from_file(item, rate);
-
+  int32_t socket_descriptor = item->socket_descriptor;
   if (bytes_read > 0)
   {
     if ((uint32_t)bytes_read < rate)
@@ -520,14 +515,25 @@ void wrote_data_into_file(char *buffer, const uint32_t rate, FILE *resource_file
 }
 
 
-int32_t read_data_from_file(Connection *item, const uint32_t rate)
+int32_t read_data_from_file(Connection *item, const uint32_t transmission_rate)
 {
+  if (item->resource_file == NULL)
+  {
+    item->state = Sent;
+    return -1;
+  }
+
+  uint32_t rate = (BUFSIZ < transmission_rate)? BUFSIZ: transmission_rate;
   fseek(item->resource_file, item->wrote_data, SEEK_SET);
 
-  return  fread(item->buffer,
-                sizeof(char),
-                rate,
-                item->resource_file);
+  int32_t read_data =  fread(item->buffer,
+                             sizeof(char),
+                             rate,
+                             item->resource_file);
+
+  item->read_file_data = read_data;
+  item->state = SendingResource;
+  return 0;
 }
 
 void queue_request_to_read(Connection *item, 
@@ -538,6 +544,7 @@ void queue_request_to_read(Connection *item,
                                            item->buffer,
                                            item->id,
                                            rate,
+                                           item->wrote_data,
                                            Read);
   add_request_in_list(manager, node);
 }

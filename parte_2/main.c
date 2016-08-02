@@ -160,7 +160,7 @@ void handle_sigint(int signal_number)
     close(*listening_socket_ptr);
   }
 
-  exit(1);
+  pthread_exit(NULL);
 }
 
 void setup_threads(thread *thread_pool, const uint32_t pool_size, request_manager *manager)
@@ -204,12 +204,12 @@ int main(int argc, char **argv)
   ConnectionManager manager = create_manager();
   manager_ptr = &manager;
 
-  /*request_manager req_manager = create_request_manager();
-  request_manager_pr = &req_manager;*/
+  request_manager req_manager = create_request_manager();
+  request_manager_pr = &req_manager;
 
-  /*thread thread_pool[NUMBER_OF_THREADS];
+  thread thread_pool[NUMBER_OF_THREADS];
   setup_threads(thread_pool, NUMBER_OF_THREADS, &req_manager);
-  start_threads(thread_pool, NUMBER_OF_THREADS);*/
+  start_threads(thread_pool, NUMBER_OF_THREADS);
 
 
   int success = 0;
@@ -350,10 +350,10 @@ int main(int argc, char **argv)
             send_header(ptr, transmission_rate);
           }
 
-          /*if (ptr->state == ReadingFromFile)
+          if (ptr->state == ReadingFromFile)
           {
             read_data_from_file(ptr, transmission_rate);
-          }*/
+          }
 
           if (ptr->state == SendingResource)
           {
