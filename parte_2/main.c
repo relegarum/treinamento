@@ -329,6 +329,7 @@ int main(int argc, char **argv)
            ptr->state == Receiving ) &&
           FD_ISSET(ptr->socket_descriptor, &read_fds))
       {
+        get_operation(ptr, transmission_rate);
         struct timeval next;
         next.tv_sec = ptr->last_connection_time.tv_sec + 1;
         next.tv_usec = ptr->last_connection_time.tv_usec;
@@ -343,7 +344,7 @@ int main(int argc, char **argv)
             goto exit;
           }
 
-          if (ptr->partial_read + BUFSIZ > (uint32_t )transmission_rate)
+          if (ptr->partial_read  >= (uint32_t )transmission_rate)
           {
             gettimeofday(&(ptr->last_connection_time), NULL);
             lowest.tv_sec = ptr->last_connection_time.tv_sec;
@@ -378,7 +379,7 @@ int main(int argc, char **argv)
             send_response(ptr, transmission_rate);
           }
 
-          if (ptr->partial_wrote + BUFSIZ > (uint32_t )transmission_rate)
+          if (ptr->partial_wrote >= (uint32_t )transmission_rate)
           {
             gettimeofday(&(ptr->last_connection_time), NULL);
             lowest.tv_sec = ptr->last_connection_time.tv_sec;
