@@ -61,6 +61,7 @@ void init_connection_item(Connection *item, int socket_descriptor, uint32_t id)
   item->resource_file        = NULL;
   item->request              = NULL;
   item->header               = NULL;
+  item->end_of_header        = NULL;
   item->next_ptr             = NULL;
   item->previous_ptr         = NULL;
   item->datagram_socket      = -1;
@@ -83,6 +84,7 @@ void free_connection_item(Connection *item)
   item->buffer[0]            = '\0';
   item->next_ptr             = NULL;
   item->previous_ptr         = NULL;
+  item->end_of_header        = NULL;
 
   item->last_connection_time.tv_sec = 0;
   item->last_connection_time.tv_usec = 0;
@@ -169,11 +171,13 @@ int32_t receive_request(Connection *item, const uint32_t transmission_rate)
     carriage             += bytes_received; /*&buffer[total_bytes_received]*/
   } while((transmission_rate != total_bytes_received));
 
-  if(item->read_data > END_OF_HEADER_SIZE) /*\r\n\r\n*/
+  if (item->read_data > END_OF_HEADER_SIZE) /*\r\n\r\n*/
   {
-    char *last_piece = (item->request + item->read_data - END_OF_HEADER_SIZE);
-    if (strncmp(last_piece, EndOfHeader, END_OF_HEADER_SIZE) == 0)
+    //char *last_piece = (item->request + item->read_data - END_OF_HEADER_SIZE);
+    char *needle     = strstr(item->request + item->read_data, EndOfHeader);
+    if (needle != NULL)
     {
+      item->end_of_header = needle + END_OF_HEADER_SIZE;
       no_more_data = 1;
     }
   }
@@ -256,8 +260,8 @@ void handle_request(Connection *item, char *path)
   char operation[OPERATION_SIZE];
   char resource[MAX_RESOURCE_SIZE];
   char protocol[PROTOCOL_SIZE];
-  char mime[MAX_MIME_SIZE];
   char file_name[PATH_MAX];
+  char mime[MAX_MIME_SIZE];
 
   memset(operation, '\0', OPERATION_SIZE);
   memset(resource,  '\0', MAX_RESOURCE_SIZE);
@@ -276,13 +280,6 @@ void handle_request(Connection *item, char *path)
     goto exit_handle;
   }
 
-  if (strncmp(operation, "GET", OPERATION_SIZE) != 0)
-  {
-    item->header = strdup(HeaderNotImplemented);
-    item->resource_file = not_implemented_file;
-    item->error = 1;
-    goto exit_handle;
-  }
 
   if (strncmp(protocol, HTTP10Str, PROTOCOL_SIZE) != 0 &&
      (strncmp(protocol, HTTP11Str, PROTOCOL_SIZE) != 0 ) )
@@ -305,6 +302,22 @@ void handle_request(Connection *item, char *path)
   {
     item->header = strdup(HeaderNotFound);
     item->resource_file = not_found_file;
+    item->error = 1;
+    goto exit_handle;
+  }
+
+  if (strncmp(operation, "GET", OPERATION_SIZE) == 0)
+  {
+
+  }
+  else if (strncmp(operation, "PUT", OPERATION_SIZE) == 0)
+  {
+
+  }
+  else
+  {
+    item->header = strdup(HeaderNotImplemented);
+    item->resource_file = not_implemented_file;
     item->error = 1;
     goto exit_handle;
   }
@@ -682,5 +695,79 @@ int32_t get_operation(Connection *item, const uint32_t transmission_rate)
     return -1;
   }
 
+  return 0;
+}
+
+
+int32_t handle_get_method(Connection *item, char *file_name)
+{
+  char mime[MAX_MIME_SIZE];
+
+  item->resource_file = fopen(file_name, "rb");
+  if (item->resource_file == NULL)
+  {
+    if (errno == EACCES)
+    {
+      item->header = strdup(HeaderUnauthorized);
+      item->resource_file = unauthorized_file;
+      item->error         = 1;
+      goto exit_handle;
+    }
+    else if (errno == E2BIG)
+    {
+      item->header = strdup(HeaderBadRequest);
+      item->resource_file = bad_request_file;
+      item->error         = 1;
+      goto exit_handle;
+    }
+    else
+    {
+      item->header = strdup(HeaderNotFound);
+      item->resource_file = not_found_file;
+      item->error         = 1;
+      goto exit_handle;
+    }
+  }
+
+exit_handle:
+  get_resource_data(item, file_name, mime);
+  if (item->error == 0)
+  {
+    setup_header(item, mime);
+  }
+  item->state = SendingHeader;
+  return;
+}
+
+
+int32_t handle_put_method(Connection *item, char *file_name)
+{
+  item->resource_file = fopen(file_name, "wb");
+  if (item->resource_file == NULL)
+  {
+    if (errno == EACCES)
+    {
+      item->header = strdup(HeaderUnauthorized);
+      item->resource_file = unauthorized_file;
+      item->error         = 1;
+      return -1;
+    }
+    else if (errno == E2BIG)
+    {
+      item->header = strdup(HeaderBadRequest);
+      item->resource_file = bad_request_file;
+      item->error         = 1;
+      return -1;
+    }
+    else
+    {
+      item->header = strdup(HeaderNotFound);
+      item->resource_file = not_found_file;
+      item->error         = 1;
+      return -1;
+    }
+  }
+
+  item->state = WritingIntoFile;
   return 0;
 }

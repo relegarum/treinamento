@@ -49,6 +49,7 @@ typedef struct ConnectionStruct
   char            *request;
   FILE            *resource_file;
   char            *header;
+  char            *end_of_header;
   struct timeval  last_connection_time;
 
   /*List*/
@@ -79,6 +80,9 @@ int32_t get_resource_data(Connection *item, char *file_name, char *mime);
 void setup_header(Connection *item, char *mime);
 int8_t is_active(Connection *item);
 void handle_request(Connection *item, char *path);
+
+int32_t handle_get_method(Connection *item, char *file_name);
+int32_t handle_put_method(Connection *item, char *file_name);
 
 /* Thread related functions */
 void queue_request_to_read(Connection *item,
