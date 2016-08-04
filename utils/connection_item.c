@@ -16,6 +16,7 @@
 #include <netdb.h>
 
 #include "file_utils.h"
+#include "http_utils.h"
 
 #define MAX_REQUEST_SIZE      8000
 #define MAX_ERROR_STR_SIZE    30
@@ -38,8 +39,6 @@ const char *ContentLenghtMask    = "Content-Length: %lld\r\n";
 const char *ContentTypeStr       = "Content-Type: %s\r\n";
 const char *UnknownTypeStr       = "application/octet-stream";
 const char *ServerStr            = "Server: Aker\r\n";
-const char *HTTP10Str            = "HTTP/1.0";
-const char *HTTP11Str            = "HTTP/1.1";
 
 const char * const EndOfHeader    = "\r\n\r\n";
 const char * const RequestMsgMask = "GET %s HTTP/1.0\r\n\r\n";
@@ -140,7 +139,7 @@ int32_t receive_request(Connection *item, const uint32_t transmission_rate)
 
   uint32_t total_bytes_received = 0;
   int32_t socket_descriptor    = item->socket_descriptor;
-  int8_t no_more_data = 0;
+  int8_t end_of_header_flag = 0;
   do
   {
     uint32_t bytes_to_read  = transmission_rate - total_bytes_received;
@@ -149,7 +148,7 @@ int32_t receive_request(Connection *item, const uint32_t transmission_rate)
     {
       if( errno == EWOULDBLOCK || errno == EAGAIN )
       {
-        no_more_data = 1;
+        end_of_header_flag = 1;
         break;
       }
       else
@@ -161,7 +160,7 @@ int32_t receive_request(Connection *item, const uint32_t transmission_rate)
 
     if (bytes_received == 0)
     {
-      no_more_data = 1;
+      end_of_header_flag = 1;
       break;
     }
 
@@ -178,11 +177,11 @@ int32_t receive_request(Connection *item, const uint32_t transmission_rate)
     if (needle != NULL)
     {
       item->end_of_header = needle + END_OF_HEADER_SIZE;
-      no_more_data = 1;
+      end_of_header_flag = 1;
     }
   }
 
-  if (no_more_data)
+  if (end_of_header_flag)
   {
     item->request[item->read_data + 1] = '\0'; /* *carriage = '\0*/
     item->state = Handling;
@@ -281,8 +280,7 @@ void handle_request(Connection *item, char *path)
   }
 
 
-  if (strncmp(protocol, HTTP10Str, PROTOCOL_SIZE) != 0 &&
-     (strncmp(protocol, HTTP11Str, PROTOCOL_SIZE) != 0 ) )
+  if (verify_protocol(protocol) != 0)
   {
     item->header = strdup(HeaderWrongVersion);
     item->resource_file = wrong_version_file;
@@ -308,11 +306,14 @@ void handle_request(Connection *item, char *path)
 
   if (strncmp(operation, "GET", OPERATION_SIZE) == 0)
   {
-
+    if (handle_get_method(item, file_name) != 0 )
+    {
+      goto exit_handle;
+    }
   }
   else if (strncmp(operation, "PUT", OPERATION_SIZE) == 0)
   {
-
+    handle_put_method(item, file_name);
   }
   else
   {
@@ -322,31 +323,6 @@ void handle_request(Connection *item, char *path)
     goto exit_handle;
   }
 
-  item->resource_file = fopen(file_name, "rb");
-  if (item->resource_file == NULL)
-  {
-    if (errno == EACCES)
-    {
-      item->header = strdup(HeaderUnauthorized);
-      item->resource_file = unauthorized_file;
-      item->error         = 1;
-      goto exit_handle;
-    }
-    else if (errno == E2BIG)
-    {
-      item->header = strdup(HeaderBadRequest);
-      item->resource_file = bad_request_file;
-      item->error         = 1;
-      goto exit_handle;
-    }
-    else
-    {
-      item->header = strdup(HeaderNotFound);
-      item->resource_file = not_found_file;
-      item->error         = 1;
-      goto exit_handle;
-    }
-  }
 
 exit_handle:
   get_resource_data(item, file_name, mime);
@@ -427,7 +403,7 @@ int32_t send_header(Connection *item, const uint32_t transmission_rate)
   uint32_t header_size       = strlen(item->header);
   uint32_t rate = (BUFSIZ > transmission_rate) ? BUFSIZ : transmission_rate;
 
-  if ( (header_size - item->wrote_data) < rate )
+  if ((header_size - item->wrote_data) < rate)
   {
     rate = (header_size - item->wrote_data);
   }
@@ -523,7 +499,10 @@ void setup_header(Connection *item, char *mime)
                                      end_size;
 
   const int32_t max_Length_str_size = 50;
-  const int32_t header_size      = header_mask_size + max_Length_str_size + end_size;
+  const int32_t header_size      = header_mask_size +
+                                   max_Length_str_size +
+                                   end_size;
+
   item->header     = malloc(sizeof(char) * (header_size));
   char *headerMask = malloc(sizeof(char) * (header_mask_size)); // \r\n
 
@@ -597,18 +576,15 @@ void queue_request_to_read(Connection *item,
     perror("socketPair");
   }
 
-  /** Set connection as nonblock*/
-  if (fcntl(socket_pair[0], F_SETFL, fcntl(socket_pair[0], F_GETFL) | O_NONBLOCK) < 0)
-  {
-    perror("fcntl");
-  }
   item->datagram_socket = socket_pair[0];
+  int io_thread_socket  = socket_pair[1];
 
+  set_socket_as_nonblocking(item->datagram_socket);
 
   uint32_t rate = (BUFSIZ < transmission_rate)? BUFSIZ - 1: transmission_rate;
   request_list_node *node = create_request(item->resource_file,
                                            item->id,
-                                           socket_pair[1],
+                                           io_thread_socket,
                                            rate + 1,
                                            item->wrote_data,
                                            Read);
@@ -618,7 +594,6 @@ void queue_request_to_read(Connection *item,
 
 void receive_from_thread(Connection *item, const uint32_t transmission_rate)
 {
-  /*char buffer[BUFSIZ];*/
   uint32_t rate = (BUFSIZ - 1 < transmission_rate)? BUFSIZ - 1: transmission_rate;
   int32_t read_data = read(item->datagram_socket, item->buffer, rate);
   if (read_data < 0)
@@ -644,64 +619,13 @@ void receive_from_thread(Connection *item, const uint32_t transmission_rate)
 
   /*printf("%s", item->buffer);*/
   close(item->datagram_socket);
-  /*strncpy(item->buffer, buffer, rate);*/
   item->read_file_data = read_data;
   item->state = SendingResource;
 }
 
-int32_t get_operation(Connection *item, const uint32_t transmission_rate)
-{
-  int32_t bytes_received       = 0;
-  char header_slice[BUFSIZ];
-  bytes_received = recv(item->socket_descriptor, header_slice, BUFSIZ, MSG_PEEK );
-  if (bytes_received == 0)
-  {
-    printf( "Nothing was received as a Header!" );
-    return -1;
-  }
-
-  char operation[OPERATION_SIZE];
-  char resource[PATH_MAX];
-  char protocol[PROTOCOL_SIZE];
-  if (sscanf(header_slice, "%5s %4095s %8s\r\n", operation, resource, protocol) != 3)
-  {
-    item->header = strdup(HeaderBadRequest);
-    item->resource_file = bad_request_file;
-    item->error = 1;
-    return -1;
-  }
-
-  if (strncmp(operation, "GET", OPERATION_SIZE) == 0)
-  {
-    item->state = Receiving;
-  }
-  else if(strncmp(operation, "PUT", OPERATION_SIZE) == 0)
-  {
-    char *pointer    = strstr( header_slice, EndOfHeader);
-    char *contentPtr = pointer + END_OF_HEADER_SIZE; /*strlen( \r\n\r\n )*/
-    int32_t header_length   = (contentPtr - header_slice);
-    int32_t content_size    = get_response_size( header_slice );
-
-    printf("Header Length: %d\n", header_length);
-    printf("Content Size: %d\n", content_size);
-
-    return 0;
-  }
-  else
-  {
-    item->header = strdup(HeaderNotImplemented);
-    item->resource_file = not_implemented_file;
-    item->error = 1;
-    return -1;
-  }
-
-  return 0;
-}
-
-
 int32_t handle_get_method(Connection *item, char *file_name)
 {
-  char mime[MAX_MIME_SIZE];
+  //char mime[MAX_MIME_SIZE];
 
   item->resource_file = fopen(file_name, "rb");
   if (item->resource_file == NULL)
@@ -730,18 +654,19 @@ int32_t handle_get_method(Connection *item, char *file_name)
   }
 
 exit_handle:
-  get_resource_data(item, file_name, mime);
+  /*get_resource_data(item, file_name, mime);
   if (item->error == 0)
   {
     setup_header(item, mime);
-  }
+  }*/
   item->state = SendingHeader;
-  return;
+  return item->error;
 }
 
 
 int32_t handle_put_method(Connection *item, char *file_name)
 {
+  int32_t ret = 0;
   item->resource_file = fopen(file_name, "wb");
   if (item->resource_file == NULL)
   {
@@ -750,24 +675,25 @@ int32_t handle_put_method(Connection *item, char *file_name)
       item->header = strdup(HeaderUnauthorized);
       item->resource_file = unauthorized_file;
       item->error         = 1;
-      return -1;
+      ret = -1;
+
     }
     else if (errno == E2BIG)
     {
       item->header = strdup(HeaderBadRequest);
       item->resource_file = bad_request_file;
       item->error         = 1;
-      return -1;
+      ret = -1;
     }
     else
     {
       item->header = strdup(HeaderNotFound);
       item->resource_file = not_found_file;
       item->error         = 1;
-      return -1;
+      ret = -1;
     }
   }
 
   item->state = WritingIntoFile;
-  return 0;
+  return ret;
 }

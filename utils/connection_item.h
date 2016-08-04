@@ -28,7 +28,8 @@ enum ConnectionStates
   Handling          =  5,
   ReadingFromFile   =  6,
   WritingIntoFile   =  7,
-  WaitingFromIO     =  8
+  WaitingFromIO     =  8,
+  ReceivingFromPut  =  9
 };
 
 typedef struct ConnectionStruct
@@ -68,7 +69,7 @@ int32_t receive_request_blocking(Connection *item);
 
 /* Receive function set */
 int32_t receive_request(Connection *item, const uint32_t transmission_rate);
-int32_t get_operation(Connection *item, const uint32_t transmission_rate);
+/*int32_t get_operation(Connection *item, const uint32_t transmission_rate);*/
 
 /* Send function set */
 int32_t send_response(Connection *item, uint32_t transmission_rate);
