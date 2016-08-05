@@ -190,7 +190,9 @@ void handle_sigint(int signal_number)
   exit(1);
 }
 
-void setup_threads(thread *thread_pool, const uint32_t pool_size, request_manager *manager)
+void setup_threads(thread *thread_pool,
+                   const uint32_t pool_size,
+                   request_manager *manager)
 {
   uint32_t index = 0;
   for (;index < pool_size; ++index)
@@ -208,19 +210,8 @@ void start_threads(thread *thread_pool, const uint32_t pool_size)
   }
 }
 
-/*void clean_threads(thread *thread_pool, const uint32_t pool_size)
-{
-  uint32_t index = 0;
-  for (;index < pool_size; ++index)
-  {
-    clean_thread(&(thread_pool[index]));
-  }
-}*/
-
-
 int main(int argc, char **argv)
 {
-  //sleep(15);
   /*setup_deamon();*/
   int32_t listening_sock_description = -1;
   int32_t transmission_rate    = 0;
@@ -305,7 +296,7 @@ int main(int argc, char **argv)
     read_fds   = master;
     write_fds  = master;
     except_fds = master;
-   int ret = select(greatest_file_desc + 1,
+    int ret = select(greatest_file_desc + 1,
                      &read_fds,
                      &write_fds,
                      &except_fds,
@@ -336,11 +327,13 @@ int main(int argc, char **argv)
     Connection *ptr = manager.head;
     while (ptr != NULL)
     {
-      if ((ptr->state == Free ||
-           ptr->state == Receiving ) &&
-          FD_ISSET(ptr->socket_descriptor, &read_fds))
+
+      if (verify_if_has_to_exchange_data(ptr))
       {
-        if (verify_if_has_to_exchange_data(ptr))
+
+        if ((ptr->state == Free ||
+             ptr->state == Receiving ) &&
+            FD_ISSET(ptr->socket_descriptor, &read_fds))
         {
           allinactive &= 0;
           if (receive_request(ptr, transmission_rate) == -1)
@@ -348,26 +341,14 @@ int main(int argc, char **argv)
             success = -1;
             goto exit;
           }
-
-          if (ptr->partial_read + BUFSIZ > (uint32_t )transmission_rate)
-          {
-            gettimeofday(&(ptr->last_connection_time), NULL);
-            lowest.tv_sec = ptr->last_connection_time.tv_sec;
-            lowest.tv_usec = ptr->last_connection_time.tv_usec;
-            ptr->partial_read = 0;
-          }
         }
-      }
 
-      if (ptr->state == Handling)
-      {
-        handle_request(ptr, path);
-      }
+        if (ptr->state == Handling)
+        {
+          handle_request(ptr, path);
+        }
 
-      if (FD_ISSET(ptr->socket_descriptor, &write_fds))
-      {
-
-        if (verify_if_has_to_exchange_data(ptr))
+        if (FD_ISSET(ptr->socket_descriptor, &write_fds))
         {
           allinactive &= 0;
           if (ptr->state == SendingHeader)
@@ -379,20 +360,19 @@ int main(int argc, char **argv)
           {
             send_response(ptr, transmission_rate);
           }
+        }
 
-          if (ptr->partial_wrote + BUFSIZ > (uint32_t )transmission_rate)
-          {
-            gettimeofday(&(ptr->last_connection_time), NULL);
-            lowest.tv_sec = ptr->last_connection_time.tv_sec;
-            lowest.tv_usec = ptr->last_connection_time.tv_usec;
-            ptr->partial_wrote = 0;
-          }
+        if (ptr->partial_wrote + BUFSIZ > (uint32_t )transmission_rate)
+        {
+          gettimeofday(&(ptr->last_connection_time), NULL);
+          ptr->partial_wrote = 0;
         }
       }
 
       if (ptr->state == ReadingFromFile)
       {
         queue_request_to_read(ptr, &req_manager, transmission_rate);
+        //read_data_from_file(ptr, transmission_rate);
       }
 
       if (ptr->state == WaitingFromIO)
@@ -423,7 +403,7 @@ int main(int argc, char **argv)
     if (manager.size != 0)
     {
       if (((manager.size == 1) &&
-          (manager.head->state == Free)) ||
+           (manager.head->state == Free)) ||
           !allinactive)
       {
         continue;
