@@ -111,6 +111,35 @@ int32_t handle_arguments(int argc,
   return 0;
 }
 
+useconds_t calculate_time_to_sleep(const ConnectionManager *manager,
+                                   const struct timeval *lowest,
+                                   const int8_t allinactive)
+{
+  if (manager->size != 0)
+  {
+    if (((manager->size == 1) &&
+         (manager->head->state == Free)) ||
+        !allinactive)
+    {
+      return 0;
+    }
+    struct timeval now;
+    gettimeofday(&now, 0);
+
+    struct timeval one_second_later;
+    one_second_later.tv_sec =  lowest->tv_sec + 1;
+    one_second_later.tv_usec = lowest->tv_usec;
+    if(timercmp(&one_second_later, &now, >))
+    {
+      struct timeval time_to_sleep;
+      timersub(&one_second_later, &now, &time_to_sleep);
+      return time_to_sleep.tv_usec;
+    }
+  }
+
+  return 0;
+}
+
 int32_t verify_if_has_to_exchange_data(Connection* item)
 {
   struct timeval next;
@@ -283,26 +312,23 @@ int main(int argc, char **argv)
   timeout.tv_sec = MAX_TIMEOUT;
   timeout.tv_usec = 0;
 
-  /*time_t begin;
-  time_t end;*/
   while (1)
   {
     if (terminate)
     {
-      printf("terminate");
       goto exit;
     }
 
     read_fds   = master;
     write_fds  = master;
     except_fds = master;
-    int ret = select(greatest_file_desc + 1,
+      int ret = select(greatest_file_desc + 1,
                      &read_fds,
                      &write_fds,
                      &except_fds,
                      &timeout);
 
-    if ((ret == -1) || FD_ISSET(listening_sock_description, &except_fds) )
+   if ((ret == -1) || FD_ISSET(listening_sock_description, &except_fds) )
     {
       perror("select error");
       printf("teste");
@@ -343,6 +369,16 @@ int main(int argc, char **argv)
           }
         }
 
+        if ((ptr->state == ReceivingFromPut) &&
+            FD_ISSET(ptr->socket_descriptor, &read_fds) )
+        {
+          if (receive_data(ptr, transmission_rate) == -1)
+          {
+            success = -1;
+            goto exit;
+          }
+        }
+
         if (ptr->state == Handling)
         {
           handle_request(ptr, path);
@@ -369,15 +405,26 @@ int main(int argc, char **argv)
         }
       }
 
+      if (ptr->state == WritingIntoFile)
+      {
+        write_data_into_file(ptr, ptr->end_of_header, transmission_rate, ptr->resource_file);
+        //queue_request_to_write(ptr, &req_manager, transmission_rate);
+        ptr->state = ReceivingFromPut;
+      }
+
       if (ptr->state == ReadingFromFile)
       {
         queue_request_to_read(ptr, &req_manager, transmission_rate);
         //read_data_from_file(ptr, transmission_rate);
       }
 
-      if (ptr->state == WaitingFromIO)
+      if (ptr->state == WaitingFromIORead)
       {
         receive_from_thread(ptr, transmission_rate);
+      }
+
+      if (ptr->state == WaitingFromIOWrite)
+      {
       }
 
       if (timercmp(&(ptr->last_connection_time), &lowest, <))
@@ -400,26 +447,12 @@ int main(int argc, char **argv)
       }
     }
 
-    if (manager.size != 0)
+    useconds_t time_to_sleep = calculate_time_to_sleep(&manager,
+                                                       &lowest,
+                                                       allinactive);
+    if (time_to_sleep != 0 )
     {
-      if (((manager.size == 1) &&
-           (manager.head->state == Free)) ||
-          !allinactive)
-      {
-        continue;
-      }
-      struct timeval now;
-      gettimeofday(&now, 0);
-
-      struct timeval one_second_later;
-      one_second_later.tv_sec =  lowest.tv_sec + 1;
-      one_second_later.tv_usec = lowest.tv_usec;
-      if(timercmp(&one_second_later, &now, >))
-      {
-        struct timeval time_to_sleep;
-        timersub(&one_second_later, &now, &time_to_sleep);
-        usleep(time_to_sleep.tv_usec);
-      }
+      usleep(time_to_sleep);
     }
   }
 
@@ -432,7 +465,7 @@ exit:
   free_list(&manager);
 
   int index = 0;
-  for ( index = 0; index < NUMBER_OF_THREADS; ++index)
+  for (index = 0; index < NUMBER_OF_THREADS; ++index)
   {
     pthread_join(thread_pool[index].pthread, NULL);
   }
