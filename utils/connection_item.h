@@ -47,6 +47,7 @@ typedef struct ConnectionStruct
   uint32_t        partial_wrote;
   uint32_t        read_file_data;
   uint32_t        data_to_write_size;
+  uint32_t        content_length;
   int32_t         datagram_socket;
   char            buffer[BUFSIZ];
   char            *request;

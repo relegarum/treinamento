@@ -322,7 +322,7 @@ int main(int argc, char **argv)
     read_fds   = master;
     write_fds  = master;
     except_fds = master;
-      int ret = select(greatest_file_desc + 1,
+    int ret = select(greatest_file_desc + 1,
                      &read_fds,
                      &write_fds,
                      &except_fds,
@@ -409,7 +409,6 @@ int main(int argc, char **argv)
       {
         write_data_into_file(ptr, ptr->end_of_header, transmission_rate, ptr->resource_file);
         //queue_request_to_write(ptr, &req_manager, transmission_rate);
-        ptr->state = ReceivingFromPut;
       }
 
       if (ptr->state == ReadingFromFile)

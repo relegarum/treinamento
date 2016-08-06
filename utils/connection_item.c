@@ -56,6 +56,7 @@ void init_connection_item(Connection *item, int socket_descriptor, uint32_t id)
   item->partial_wrote        = 0;
   item->read_file_data       = 0;
   item->data_to_write_size   = 0;
+  item->content_length       = 0;
   item->id                   = id;
   item->buffer[0]            = '\0';
   item->resource_file        = NULL;
@@ -82,6 +83,7 @@ void free_connection_item(Connection *item)
   item->read_file_data       = 0;
   item->response_size        = 0;
   item->data_to_write_size   = 0;
+  item->content_length       = 0;
   item->buffer[0]            = '\0';
   item->next_ptr             = NULL;
   item->previous_ptr         = NULL;
@@ -617,6 +619,13 @@ void write_data_into_file(Connection *item,
   *(buffer + item->data_to_write_size + 1) = '\0';
   puts(aux);
   fwrite(aux, sizeof(char), item->data_to_write_size, resource_file);
+  item->wrote_data +=item->data_to_write_size;
+  if (item->wrote_data >= item->response_size)
+  {
+    item->state = Sent;
+    return;
+  }
+  item->state = ReceivingFromPut;
 }
 
 
@@ -795,6 +804,17 @@ int32_t handle_put_method(Connection *item, char *file_name)
       ret = -1;
     }
   }
+
+  char* carriage = strstr(item->request, "Content-Length:");
+  if (carriage == NULL)
+  {
+    item->header = strdup(HeaderBadRequest);
+    item->resource_file = bad_request_file;
+    item->error         = 1;
+    ret = -1;
+  }
+
+  sscanf(item->request, ContentLenghtMask, &(item->response_size));
 
   item->state = WritingIntoFile;
   return ret;
