@@ -190,33 +190,9 @@ void handle_sigint(int signal_number)
 {
   printf("signal free1");
 
-  terminate =1;
+  terminate = 1;
 
   return;
-  if (signal_number == SIGINT)
-  {
-    clean_default_files();
-
-  }
-
-  if (manager_ptr != NULL)
-  {
-    printf("signal free");
-    free_list(manager_ptr);
-  }
-
-  if (request_manager_pr != NULL)
-  {
-    free_request_list(request_manager_pr);
-  }
-
-  if (( listening_socket_ptr != NULL ) &&
-      (*listening_socket_ptr != -1))
-  {
-    close(*listening_socket_ptr);
-  }
-
-  exit(1);
 }
 
 void setup_threads(thread *thread_pool,
@@ -357,25 +333,32 @@ int main(int argc, char **argv)
       if (verify_if_has_to_exchange_data(ptr))
       {
 
-        if ((ptr->state == Free ||
-             ptr->state == Receiving ) &&
-            FD_ISSET(ptr->socket_descriptor, &read_fds))
+        if (FD_ISSET(ptr->socket_descriptor, &read_fds))
         {
-          allinactive &= 0;
-          if (receive_request(ptr, transmission_rate) == -1)
+          if (ptr->state == Free ||
+              ptr->state == Receiving)
           {
-            success = -1;
-            goto exit;
+            allinactive &= 0;
+            if (receive_request(ptr, transmission_rate) == -1)
+            {
+              success = -1;
+              goto exit;
+            }
           }
-        }
 
-        if ((ptr->state == ReceivingFromPut) &&
-            FD_ISSET(ptr->socket_descriptor, &read_fds) )
-        {
-          if (receive_data_from_put(ptr, transmission_rate) == -1)
+          if ((ptr->state == ReceivingFromPut))
           {
-            success = -1;
-            goto exit;
+            if (receive_data_from_put(ptr, transmission_rate) == -1)
+            {
+              success = -1;
+              goto exit;
+            }
+          }
+
+          if (ptr->partial_read + BUFSIZ > (uint32_t )transmission_rate)
+          {
+            gettimeofday(&(ptr->last_connection_time), NULL);
+            ptr->partial_read = 0;
           }
         }
 
@@ -396,19 +379,19 @@ int main(int argc, char **argv)
           {
             send_response(ptr, transmission_rate);
           }
-        }
 
-        if (ptr->partial_wrote + BUFSIZ > (uint32_t )transmission_rate)
-        {
-          gettimeofday(&(ptr->last_connection_time), NULL);
-          ptr->partial_wrote = 0;
+          if (ptr->partial_wrote + BUFSIZ > (uint32_t )transmission_rate)
+          {
+            gettimeofday(&(ptr->last_connection_time), NULL);
+            ptr->partial_wrote = 0;
+          }
         }
       }
 
       if (ptr->state == WritingIntoFile)
       {
-        write_data_into_file(ptr, ptr->buffer, ptr->read_data, ptr->resource_file);
-        //queue_request_to_write(ptr, &req_manager, transmission_rate);
+        //write_data_into_file(ptr, ptr->resource_file);
+        queue_request_to_write(ptr, &req_manager);
       }
 
       if (ptr->state == ReadingFromFile)
@@ -424,6 +407,7 @@ int main(int argc, char **argv)
 
       if (ptr->state == WaitingFromIOWrite)
       {
+        receive_from_thread_write(ptr);
       }
 
       if (timercmp(&(ptr->last_connection_time), &lowest, <))

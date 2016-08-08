@@ -49,12 +49,11 @@ typedef struct ConnectionStruct
   uint8_t         error;
   uint64_t        read_data;
   uint64_t        wrote_data;
-  uint64_t        response_size;
+  uint64_t        resource_size;
   uint64_t        partial_read;
   uint32_t        partial_wrote;
   uint32_t        read_file_data;
   uint32_t        data_to_write_size;
-  uint32_t        content_length;
   uint32_t        method;
   int32_t         datagram_socket;
   char            buffer[BUFSIZ];
@@ -102,16 +101,13 @@ void queue_request_to_read(Connection *item,
                            const uint32_t transmission_rate);
 
 void queue_request_to_write(Connection *item,
-                            request_manager *manager,
-                            const uint32_t transmission_rate);
+                            request_manager *manager);
 
 void receive_from_thread(Connection *item, const uint32_t transmission_rate);
-void receive_from_thread_write(Connection *item, const uint32_t transmission_rate);
+void receive_from_thread_write(Connection *item);
 
 int32_t read_data_from_file(Connection *item, const uint32_t transmission_rate);
 void write_data_into_file(Connection *item,
-                          char *buffer,
-                          const uint32_t rate,
                           FILE *resource_file);
 
 
