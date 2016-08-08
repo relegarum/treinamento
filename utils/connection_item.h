@@ -33,6 +33,13 @@ enum ConnectionStates
   ReceivingFromPut   =  10
 };
 
+enum ConnectionMethods
+{
+  Unknown = 0,
+  Get     = 1,
+  Put     = 2
+};
+
 typedef struct ConnectionStruct
 {
   int32_t         socket_descriptor;
@@ -48,6 +55,7 @@ typedef struct ConnectionStruct
   uint32_t        read_file_data;
   uint32_t        data_to_write_size;
   uint32_t        content_length;
+  uint32_t        method;
   int32_t         datagram_socket;
   char            buffer[BUFSIZ];
   char            *request;
@@ -72,7 +80,7 @@ int32_t receive_request_blocking(Connection *item);
 
 /* Receive function set */
 int32_t receive_request(Connection *item, const uint32_t transmission_rate);
-int32_t receive_data(Connection *item, const uint32_t transmission_rate);
+int32_t receive_data_from_put(Connection *item, const uint32_t transmission_rate);
 
 /* Send function set */
 int32_t send_response(Connection *item, uint32_t transmission_rate);
@@ -98,6 +106,7 @@ void queue_request_to_write(Connection *item,
                             const uint32_t transmission_rate);
 
 void receive_from_thread(Connection *item, const uint32_t transmission_rate);
+void receive_from_thread_write(Connection *item, const uint32_t transmission_rate);
 
 int32_t read_data_from_file(Connection *item, const uint32_t transmission_rate);
 void write_data_into_file(Connection *item,

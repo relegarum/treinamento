@@ -372,7 +372,7 @@ int main(int argc, char **argv)
         if ((ptr->state == ReceivingFromPut) &&
             FD_ISSET(ptr->socket_descriptor, &read_fds) )
         {
-          if (receive_data(ptr, transmission_rate) == -1)
+          if (receive_data_from_put(ptr, transmission_rate) == -1)
           {
             success = -1;
             goto exit;
@@ -407,7 +407,7 @@ int main(int argc, char **argv)
 
       if (ptr->state == WritingIntoFile)
       {
-        write_data_into_file(ptr, ptr->end_of_header, transmission_rate, ptr->resource_file);
+        write_data_into_file(ptr, ptr->buffer, ptr->read_data, ptr->resource_file);
         //queue_request_to_write(ptr, &req_manager, transmission_rate);
       }
 

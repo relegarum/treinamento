@@ -58,6 +58,7 @@ void init_connection_item(Connection *item, int socket_descriptor, uint32_t id)
   item->data_to_write_size   = 0;
   item->content_length       = 0;
   item->id                   = id;
+  item->method               = Unknown;
   item->buffer[0]            = '\0';
   item->resource_file        = NULL;
   item->request              = NULL;
@@ -84,6 +85,7 @@ void free_connection_item(Connection *item)
   item->response_size        = 0;
   item->data_to_write_size   = 0;
   item->content_length       = 0;
+  item->method               = Unknown;
   item->buffer[0]            = '\0';
   item->next_ptr             = NULL;
   item->previous_ptr         = NULL;
@@ -135,6 +137,7 @@ Connection *create_connection_item(int socket_descriptor, uint32_t id)
 
 int32_t receive_request(Connection *item, const uint32_t transmission_rate)
 {
+  uint32_t rate = (BUFSIZ < transmission_rate) ? BUFSIZ: transmission_rate;
   item->request = realloc(item->request,
                           sizeof(char)*(item->read_data +
                                         transmission_rate + 1));
@@ -146,7 +149,7 @@ int32_t receive_request(Connection *item, const uint32_t transmission_rate)
   int8_t   end_of_header_flag   = 0;
   do
   {
-    uint32_t bytes_to_read  = transmission_rate - total_bytes_received;
+    uint32_t bytes_to_read  = rate - total_bytes_received;
     int32_t bytes_received = recv(socket_descriptor, carriage, bytes_to_read, 0);
     if (bytes_received < 0)
     {
@@ -172,7 +175,7 @@ int32_t receive_request(Connection *item, const uint32_t transmission_rate)
     item->read_data      += bytes_received;
     item->partial_read   += bytes_received;
     carriage             += bytes_received; /*&buffer[total_bytes_received]*/
-  } while((transmission_rate != total_bytes_received));
+  } while((rate != total_bytes_received));
 
   if (item->read_data > END_OF_HEADER_SIZE) /*\r\n\r\n*/
   {
@@ -180,8 +183,9 @@ int32_t receive_request(Connection *item, const uint32_t transmission_rate)
     char *needle     = strstr(item->request, EndOfHeader);
     if (needle != NULL)
     {
-      item->data_to_write_size = (item->read_data - (item->request - needle));
-      item->end_of_header = needle + END_OF_HEADER_SIZE;
+      needle += END_OF_HEADER_SIZE;
+      item->data_to_write_size = (item->read_data - (needle - item->request));
+      memcpy(item->buffer, needle, item->data_to_write_size);
       end_of_header_flag = 1;
     }
   }
@@ -195,27 +199,24 @@ int32_t receive_request(Connection *item, const uint32_t transmission_rate)
   return 0;
 }
 
-int32_t receive_data(Connection *item, const uint32_t transmission_rate)
+int32_t receive_data_from_put(Connection *item, const uint32_t transmission_rate)
 {
   item->partial_read = 0;
-  item->request = realloc(item->request,
-                          sizeof(char)*(item->read_data +
-                                        transmission_rate + 1));
 
-  char *carriage = item->request + item->read_data;
+  uint32_t rate = (BUFSIZ < transmission_rate)? BUFSIZ: transmission_rate;
 
   int32_t  socket_descriptor    = item->socket_descriptor;
   uint32_t total_bytes_received = 0;
-  int8_t   end_of_header_flag   = 0;
+  int8_t   end_of_resource   = 0;
   do
   {
-    uint32_t bytes_to_read  = transmission_rate - total_bytes_received;
-    int32_t bytes_received = recv(socket_descriptor, carriage, bytes_to_read, 0);
+    uint32_t bytes_to_read  = rate - total_bytes_received;
+    int32_t bytes_received = recv(socket_descriptor, item->buffer, bytes_to_read, 0);
     if (bytes_received < 0)
     {
       if( errno == EWOULDBLOCK || errno == EAGAIN )
       {
-        end_of_header_flag = 1;
+        end_of_resource = 1;
         break;
       }
       else
@@ -225,33 +226,22 @@ int32_t receive_data(Connection *item, const uint32_t transmission_rate)
       }
     }
 
-    if (bytes_received == 0)
-    {
-      end_of_header_flag = 1;
-      break;
-    }
-
     total_bytes_received += bytes_received;
     item->read_data      += bytes_received;
     item->partial_read   += bytes_received;
-    carriage             += bytes_received; /*&buffer[total_bytes_received]*/
-  } while((transmission_rate != total_bytes_received));
-
-  /*if (item->read_data == item->header_size )
-  {
-    return ok;
-  }*/
+  } while((rate != total_bytes_received));
 
   /*if (item->read_data >= item->header_size )
   {
     return fail;
   }*/
 
-  if (end_of_header_flag)
+  if (end_of_resource)
   {
-    item->request[item->read_data + 1] = '\0'; /* *carriage = '\0*/
+    item->buffer[item->partial_read + 1] = '\0'; /* *carriage = '\0*/
   }
 
+  item->data_to_write_size = item->partial_read;
   item->state = WritingIntoFile;
   return 0;
 }
@@ -302,7 +292,6 @@ int32_t receive_request_blocking(Connection *item)
 
 int32_t send_response(Connection *item, uint32_t transmission_rate)
 {
-
   if (send_resource(item, transmission_rate) == -1)
   {
     item->state = Sent;
@@ -471,15 +460,15 @@ int32_t send_header(Connection *item, const uint32_t transmission_rate)
 
   uint32_t total_bytes_sent  = 0;
   uint32_t header_size       = strlen(item->header);
-  uint32_t rate = (BUFSIZ > transmission_rate) ? BUFSIZ : transmission_rate;
+  uint32_t rate = (BUFSIZ < transmission_rate)? BUFSIZ: transmission_rate;
 
   if ((header_size - item->wrote_data) < rate)
   {
     rate = (header_size - item->wrote_data);
   }
   char *carriage = item->header + item->wrote_data;
-  while (total_bytes_sent != rate &&
-         total_bytes_sent != header_size )
+  while (total_bytes_sent < rate &&
+         total_bytes_sent < header_size )
   {
     int32_t bytes_to_sent = rate - total_bytes_sent;
     int32_t bytes_sent = send(socket_descriptor, carriage, bytes_to_sent, MSG_NOSIGNAL);
@@ -499,9 +488,9 @@ int32_t send_header(Connection *item, const uint32_t transmission_rate)
     item->wrote_data += bytes_sent;
   }
 
-  if (item->wrote_data == header_size)
+  if (item->wrote_data >= header_size)
   {
-    item->state = ReadingFromFile;
+    item->state = (item->method == Put) ? Sent : ReadingFromFile;
     item->wrote_data  = 0;
   }
 
@@ -614,22 +603,21 @@ void write_data_into_file(Connection *item,
                           const uint32_t rate,
                           FILE *resource_file)
 {
-  char aux[BUFSIZ];
-  strncpy(aux, buffer, item->data_to_write_size);
-  *(buffer + item->data_to_write_size + 1) = '\0';
-  puts(aux);
-  fwrite(aux, sizeof(char), item->data_to_write_size, resource_file);
+  fwrite(item->buffer, sizeof(char), item->data_to_write_size, resource_file);
   item->wrote_data +=item->data_to_write_size;
   if (item->wrote_data >= item->response_size)
   {
-    item->state = Sent;
+    item->state = SendingHeader;
+    item->header = strdup(HeaderOk);
+    item->wrote_data = 0; /* maybe create a new variable to do that */
     return;
   }
   item->state = ReceivingFromPut;
 }
 
 
-int32_t read_data_from_file(Connection *item, const uint32_t transmission_rate)
+int32_t read_data_from_file(Connection *item,
+                            const uint32_t transmission_rate)
 {
   if (item->resource_file == NULL)
   {
@@ -650,10 +638,16 @@ int32_t read_data_from_file(Connection *item, const uint32_t transmission_rate)
   return 0;
 }
 
-void queue_request_to_read(Connection *item, 
-                           request_manager *manager, 
+void queue_request_to_read(Connection *item,
+                           request_manager *manager,
                            const uint32_t transmission_rate)
 {
+  if (item->resource_file == NULL)
+  {
+    item->state = Sent;
+    return;
+  }
+
   int socket_pair[2];
   if (socketpair(AF_UNIX, SOCK_DGRAM, 0, socket_pair))
   {
@@ -727,6 +721,10 @@ void receive_from_thread(Connection *item, const uint32_t transmission_rate)
     return;
   }
 
+  if (read_data == 0)
+  {
+    item->state = Sent;
+  }
 
   /*printf("%s", item->buffer);*/
   close(item->datagram_socket);
@@ -734,10 +732,49 @@ void receive_from_thread(Connection *item, const uint32_t transmission_rate)
   item->state = SendingResource;
 }
 
+void receive_from_thread_write(Connection *item, const uint32_t transmission_rate)
+{
+  uint8_t success = 0;
+  uint32_t rate = (BUFSIZ - 1 < transmission_rate)? BUFSIZ - 1: transmission_rate;
+  int32_t read_data = read(item->datagram_socket, &success, 1);
+  if (read_data < 0)
+  {
+    if (errno == EAGAIN ||
+        errno == EWOULDBLOCK)
+    {
+      return;
+    }
+
+    perror("read error");
+    if (errno == EBADF)
+    {
+      item->state = WritingIntoFile;
+    }
+    else
+    {
+      item->state = Sent;
+    }
+    return;
+  }
+
+  if (success)
+  {
+    item->state = ReceivingFromPut;
+  }
+  else
+  {
+    item->state = WritingIntoFile;
+  }
+
+  /*printf("%s", item->buffer);*/
+  close(item->datagram_socket);
+  //item->read_file_data = read_data;
+}
+
 int32_t handle_get_method(Connection *item, char *file_name)
 {
   //char mime[MAX_MIME_SIZE];
-
+  item->method = Get;
   item->resource_file = fopen(file_name, "rb");
   if (item->resource_file == NULL)
   {
@@ -777,6 +814,7 @@ exit_handle:
 
 int32_t handle_put_method(Connection *item, char *file_name)
 {
+  item->method = Put;
   int32_t ret = 0;
   item->resource_file = fopen(file_name, "wb");
   if (item->resource_file == NULL)
@@ -814,7 +852,7 @@ int32_t handle_put_method(Connection *item, char *file_name)
     ret = -1;
   }
 
-  sscanf(item->request, ContentLenghtMask, &(item->response_size));
+  sscanf(carriage, ContentLenghtMask, &(item->response_size));
 
   item->state = WritingIntoFile;
   return ret;
