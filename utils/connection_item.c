@@ -236,7 +236,8 @@ int32_t receive_data_from_put(Connection *item, const uint32_t transmission_rate
     return fail;
   }*/
 
-  if (end_of_resource)
+  if (end_of_resource &&
+      item->read_data >= item->content_length)
   {
     item->buffer[item->partial_read + 1] = '\0'; /* *carriage = '\0*/
   }
@@ -603,6 +604,7 @@ void write_data_into_file(Connection *item,
                           const uint32_t rate,
                           FILE *resource_file)
 {
+  fseek(resource_file, item->wrote_data, SEEK_SET);
   fwrite(item->buffer, sizeof(char), item->data_to_write_size, resource_file);
   item->wrote_data +=item->data_to_write_size;
   if (item->wrote_data >= item->response_size)
