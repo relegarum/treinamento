@@ -53,7 +53,7 @@ void init_node(request_list_node *node,
   node->file      = file;
   if (buffer != NULL)
   {
-    strncpy(node->buffer, buffer, data_size);
+    memcpy(node->buffer, buffer, data_size);
   }
   else
   {

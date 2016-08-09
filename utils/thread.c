@@ -95,7 +95,7 @@ void write_into_file(request_list_node *item)
     data_wrote = 0;
   }
   fflush(item->file);
-  /*puts(item->buffer);*/
+  printf("%s", item->buffer);
 
   if (write(item->datagram_socket, &data_wrote, sizeof(data_wrote)) < 0)
   {

@@ -125,6 +125,8 @@ void free_connection_item(Connection *item)
     close(item->datagram_socket);
     item->datagram_socket = -1;
   }
+
+  free(item);
 }
 
 Connection *create_connection_item(int socket_descriptor, uint32_t id)
@@ -323,7 +325,7 @@ void handle_request(Connection *item, char *path)
   memset(operation, '\0', OPERATION_SIZE);
   memset(resource,  '\0', MAX_RESOURCE_SIZE);
   memset(protocol,  '\0', PROTOCOL_SIZE);
-  memset(file_name,  '\0', PROTOCOL_SIZE);
+  memset(file_name, '\0', PROTOCOL_SIZE);
 
   char *request = item->request;
   item->resource_file = NULL;
@@ -775,7 +777,6 @@ void receive_from_thread_write(Connection *item)
     item->state = WritingIntoFile;
   }
 
-  printf("Wrote Data: %d\n", item->wrote_data);
   if (item->wrote_data >= item->resource_size)
   {
     item->state = SendingHeader;
@@ -792,38 +793,10 @@ void receive_from_thread_write(Connection *item)
 int32_t handle_get_method(Connection *item, char *file_name)
 {
   item->method = Get;
-  item->resource_file = fopen(file_name, "rb");
-  if (item->resource_file == NULL)
-  {
-    if (errno == EACCES)
-    {
-      item->header = strdup(HeaderUnauthorized);
-      item->resource_file = unauthorized_file;
-      item->error         = 1;
-      goto exit_handle;
-    }
-    else if (errno == E2BIG)
-    {
-      item->header = strdup(HeaderBadRequest);
-      item->resource_file = bad_request_file;
-      item->error         = 1;
-      goto exit_handle;
-    }
-    else
-    {
-      item->header = strdup(HeaderNotFound);
-      item->resource_file = not_found_file;
-      item->error         = 1;
-      goto exit_handle;
-    }
-  }
 
-exit_handle:
-  /*get_resource_data(item, file_name, mime);
-  if (item->error == 0)
-  {
-    setup_header(item, mime);
-  }*/
+  item->resource_file = fopen(file_name, "rb");
+  get_file_state(item);
+
   item->state = SendingHeader;
   return item->error;
 }
@@ -834,6 +807,16 @@ int32_t handle_put_method(Connection *item, char *file_name)
   item->method = Put;
   int32_t ret = 0;
   item->resource_file = fopen(file_name, "wb");
+
+  ret = get_file_state(item);
+  ret = extract_content_length_from_header(item);
+
+  item->state = WritingIntoFile;
+  return ret;
+}
+
+int32_t get_file_state(Connection *item)
+{
   if (item->resource_file == NULL)
   {
     if (errno == EACCES)
@@ -841,7 +824,7 @@ int32_t handle_put_method(Connection *item, char *file_name)
       item->header = strdup(HeaderUnauthorized);
       item->resource_file = unauthorized_file;
       item->error         = 1;
-      ret = -1;
+      return -1;
 
     }
     else if (errno == E2BIG)
@@ -849,27 +832,41 @@ int32_t handle_put_method(Connection *item, char *file_name)
       item->header = strdup(HeaderBadRequest);
       item->resource_file = bad_request_file;
       item->error         = 1;
-      ret = -1;
+      return -1;
     }
     else
     {
       item->header = strdup(HeaderNotFound);
       item->resource_file = not_found_file;
       item->error         = 1;
-      ret = -1;
+      return -1;
     }
   }
 
-  char* carriage = strstr(item->request, ContentLengthNeedle);
+  return 0;
+}
+
+int32_t extract_content_length_from_header(Connection *item)
+{
+  char *carriage = strstr(item->request, ContentLengthNeedle);
   if (carriage == NULL)
   {
     item->header = strdup(HeaderBadRequest);
     item->resource_file = bad_request_file;
     item->error         = 1;
-    ret = -1;
+    return -1;
   }
   sscanf(carriage, ContentLenghtMask, &(item->resource_size));
 
-  item->state = WritingIntoFile;
-  return ret;
+  return 0;
+}
+
+void verify_connection_state(Connection *item)
+{
+  if (item->state < FirsState ||
+      item->state > LastState)
+  {
+    printf("Connection in state Unknown:\n State: %d\n Request: %s\n", item->state, item->request);
+    item->state = Closed;
+  }
 }

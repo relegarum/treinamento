@@ -6,7 +6,6 @@ request_manager create_request_manager()
 {
   request_manager manager;
   init_request_list(&manager);
-  printf("manager init");
   return manager;
 }
 

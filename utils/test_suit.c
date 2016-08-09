@@ -162,3 +162,20 @@ void test_threads()
 
   free_request_list(&request_manager);
 }
+
+
+void test_rename()
+{
+  FILE *out;
+  out = fopen("arquivos_download/one.txt", "wb");
+  if (out == NULL)
+  {
+    puts("erro");
+    return;
+  }
+
+  int ret = rename("arquivos_download/two.txt", "one.txt");
+  ret     = rename("arquivos_download/three.txt", "one.txt");
+
+  fclose(out);
+}
