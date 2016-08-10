@@ -27,9 +27,12 @@
 #define MAX_REQUEST_MASK_SIZE 23 /* GET %s HTTP/1.0\r\n\r\n */
 #define MAX_MIME_SIZE         128
 #define UNKNOWN_MIME_SIZE     24
+#define MAX_TRIES             3
 
 const char *HeaderBadRequest     = "HTTP/1.0 400 Bad Request\r\n\r\n";
 const char *HeaderOk             = "HTTP/1.0 200 OK\r\n";
+const char *HeaderCreated        = "HTTP/1.0 201 Created\r\n";
+const char *HeaderConflict       = "HTTP/1.1 409 Conflict\r\n\r\n";
 const char *HeaderNotFound       = "HTTP/1.0 404 Not Found\r\n\r\n";
 const char *HeaderInternalError  = "HTTP/1.0 500 Internal Server Error\r\n\r\n";
 const char *HeaderUnauthorized   = "HTTP/1.0 401 Unauthorized\r\n\r\n";
@@ -57,6 +60,7 @@ void init_connection_item(Connection *item, int socket_descriptor, uint32_t id)
   item->partial_wrote        = 0;
   item->read_file_data       = 0;
   item->data_to_write_size   = 0;
+  item->tries                = 0;
   item->id                   = id;
   item->method               = Unknown;
   item->buffer[0]            = '\0';
@@ -73,24 +77,11 @@ void init_connection_item(Connection *item, int socket_descriptor, uint32_t id)
 
 void free_connection_item(Connection *item)
 {
-  item->state                = Closed;
-  item->id                   = 0;
-  item->header_sent          = 0;
-  item->read_data            = 0;
-  item->wrote_data           = 0;
-  item->partial_read         = 0;
-  item->partial_wrote        = 0;
-  item->read_file_data       = 0;
-  item->resource_size        = 0;
-  item->data_to_write_size   = 0;
-  item->method               = Unknown;
-  item->buffer[0]            = '\0';
-  item->next_ptr             = NULL;
-  item->previous_ptr         = NULL;
-  item->end_of_header        = NULL;
-
-  item->last_connection_time.tv_sec = 0;
-  item->last_connection_time.tv_usec = 0;
+  if (item->method == Put &&
+      !item->error)
+  {
+    rename_file_after_put(&(item->file_components));
+  }
 
   if (item->socket_descriptor != -1)
   {
@@ -120,6 +111,27 @@ void free_connection_item(Connection *item)
     close(item->datagram_socket);
     item->datagram_socket = -1;
   }
+
+
+  item->state                = Closed;
+  item->id                   = 0;
+  item->header_sent          = 0;
+  item->read_data            = 0;
+  item->wrote_data           = 0;
+  item->partial_read         = 0;
+  item->partial_wrote        = 0;
+  item->read_file_data       = 0;
+  item->resource_size        = 0;
+  item->data_to_write_size   = 0;
+  item->tries                = 0;
+  item->method               = Unknown;
+  item->buffer[0]            = '\0';
+  item->next_ptr             = NULL;
+  item->previous_ptr         = NULL;
+  item->end_of_header        = NULL;
+
+  item->last_connection_time.tv_sec = 0;
+  item->last_connection_time.tv_usec = 0;
 
   free(item);
 }
@@ -384,7 +396,11 @@ void handle_request(Connection *item, char *path)
 
 
 exit_handle:
-  get_resource_data(item, file_name, mime);
+  if (item->file_components.file_ptr != NULL)
+  {
+    get_resource_data(item, file_name, mime);
+  }
+
   if (item->error == 0)
   {
     setup_header(item, mime);
@@ -395,6 +411,10 @@ exit_handle:
 
 int32_t get_resource_data(Connection *item, char *file_name, char *mime)
 {
+  if (item->file_components.file_ptr == NULL)
+  {
+    return -1;
+  }
   int32_t fd = fileno(item->file_components.file_ptr);
   struct stat buffer;
   if (fstat(fd, &buffer) == -1)
@@ -408,7 +428,7 @@ int32_t get_resource_data(Connection *item, char *file_name, char *mime)
   if (!S_ISREG(buffer.st_mode))
   {
     item->header = strdup(HeaderBadRequest);
-    fclose(item->file_components.file_ptr);
+    /*fclose(item->file_components.file_ptr);*/
     item->file_components.file_ptr = NULL;
     item->error = 1;
     return -1;
@@ -608,7 +628,10 @@ void write_data_into_file(Connection *item,
                           FILE *resource_file)
 {
   fseek(resource_file, item->wrote_data, SEEK_SET);
-  int32_t wrote_bytes = fwrite(item->buffer, sizeof(char), item->data_to_write_size, resource_file);
+  int32_t wrote_bytes = fwrite(item->buffer,
+                               sizeof(char),
+                               item->data_to_write_size,
+                               resource_file);
   if (wrote_bytes <= 0)
   {
     perror("write_data_into_file");
@@ -777,14 +800,22 @@ void receive_from_thread_write(Connection *item)
   }
   else
   {
-    item->state = WritingIntoFile;
+    if ((item->tries)++ < MAX_TRIES )
+    {
+      item->state = WaitingFromIORead;
+      return;
+    }
+    else
+    {
+      item->state = Closed;
+      item->error = 1;
+    }
   }
 
   if (item->wrote_data >= item->resource_size)
   {
     item->state = SendingHeader;
     item->header = strdup(HeaderOk);
-    //rename_file_after_put(&(item->file_components));
     item->wrote_data = 0;
     return;
   }
@@ -812,10 +843,25 @@ int32_t handle_put_method(Connection *item, char *file_name)
   int32_t ret = 0;
 
   ret = init_file_components(&(item->file_components), file_name, WriteFile);
+  if (ret == ExistentFile )
+  {
+    item->header = strdup(HeaderConflict);
+    item->error  = 1;
+    goto exit_handle;
+  }
   ret = get_file_state(item);
   ret = extract_content_length_from_header(item);
 
-  item->state = WritingIntoFile;
+ exit_handle:
+  if (item->data_to_write_size > 0)
+  {
+    item->state = WritingIntoFile;
+  }
+  else
+  {
+    item->state = ReceivingFromPut;
+  }
+
   return ret;
 }
 
@@ -828,6 +874,7 @@ int32_t get_file_state(Connection *item)
       item->header = strdup(HeaderUnauthorized);
       item->file_components.file_ptr = unauthorized_file;
       item->error         = 1;
+      perror("access error");
       return -1;
 
     }
@@ -836,6 +883,7 @@ int32_t get_file_state(Connection *item)
       item->header = strdup(HeaderBadRequest);
       item->file_components.file_ptr = bad_request_file;
       item->error         = 1;
+      perror("too big");
       return -1;
     }
     else
@@ -843,6 +891,7 @@ int32_t get_file_state(Connection *item)
       item->header = strdup(HeaderNotFound);
       item->file_components.file_ptr = not_found_file;
       item->error         = 1;
+      perror("other'");
       return -1;
     }
   }
@@ -870,7 +919,9 @@ void verify_connection_state(Connection *item)
   if (item->state < FirsState ||
       item->state > LastState)
   {
-    printf("Connection in state Unknown:\n State: %d\n Request: %s\n", item->state, item->request);
+    printf("Connection in state Unknown:\n"
+           "State: %d\n"
+           "Request: %s\n", item->state, item->request);
     item->state = Closed;
   }
 }

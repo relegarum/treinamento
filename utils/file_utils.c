@@ -4,11 +4,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <sys/stat.h>
 
 const char * const IndexStr       = "/index.html";
 const char * const PutMark        = ".~put";
 
 #define PutMarkSize 5
+
+int file_exist( char *file_path)
+{
+  struct stat file_stats;
+  return (stat(file_path, &file_stats) == 0);
+}
 
 
 int32_t init_file_components(FileComponents *file,
@@ -19,31 +26,37 @@ int32_t init_file_components(FileComponents *file,
       file_path[0] == '\0')
   {
     printf("Wrong file path\n");
-    return -1;
+    return FilePathNull;
   }
 
   if (flags & ReadFile)
   {
-    strncpy(file->file_path, file_path, strlen(file_path));
+    size_t file_path_size = strlen(file_path);
+    strncpy(file->file_path, file_path, file_path_size);
+    file->file_path[file_path_size + 1] = '\0';
     file->file_ptr = fopen(file->file_path, "rb");
   }
   else if (flags & WriteFile)
   {
     snprintf(file->file_path, PATH_MAX, "%s%s", file_path, PutMark);
+    if (file_exist(file->file_path))
+    {
+      return ExistentFile;
+    }
     file->file_ptr = fopen(file->file_path, "wb");
   }
   else
   {
     printf("Unknown flags");
-    return -1;
+    return UnknownFlag;
   }
 
   if (file->file_ptr == NULL)
   {
-    return -1;
+    return CoudntOpen;
   }
 
-  return 0;
+  return Success;
 }
 
 int32_t destroy_file_components(FileComponents *file)
@@ -138,8 +151,11 @@ int32_t rename_file_after_put(FileComponents *file)
     return -1;
   }
 
-  fclose(file->file_ptr);
-  file->file_ptr = NULL;
+  if (file->file_ptr != NULL)
+  {
+    fclose(file->file_ptr);
+    file->file_ptr = NULL;
+  }
 
   uint32_t size_of_file_name = strlen(file->file_path);
   if (size_of_file_name < PutMarkSize)
@@ -163,13 +179,13 @@ int32_t rename_file_after_put(FileComponents *file)
   old_file_name[size_of_file_name]       = '\0';
   file->file_path[size_of_new_file_name] = '\0';
 
-  /*if (rename(old_file_name, file->file_path) < 0)
+  if (rename(old_file_name, file->file_path) < 0)
   {
     printf("old_name: %s\n", old_file_name);
     printf("new name: %s\n", file->file_path);
     perror("rename");
     return -1;
-  }*/
+  }
   return 0;
 }
 

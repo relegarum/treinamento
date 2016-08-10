@@ -15,6 +15,15 @@ enum FileFlags
   TextFile      = 1 << 3
 };
 
+enum InitFileComponentsEnum
+{
+  Success      =  0,
+  FilePathNull = -1,
+  ExistentFile = -2,
+  UnknownFlag  = -3,
+  CoudntOpen   = -4
+};
+
 typedef struct file_struct
 {
   FILE *file_ptr;
