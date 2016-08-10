@@ -394,7 +394,7 @@ int main(int argc, char **argv)
 
       if (ptr->state == WritingIntoFile)
       {
-        //write_data_into_file(ptr, ptr->resource_file);
+        //write_data_into_file(ptr, ptr->file_components.file_ptr);
         queue_request_to_write(ptr, &req_manager);
       }
 
@@ -420,7 +420,7 @@ int main(int argc, char **argv)
         lowest.tv_usec = ptr->last_connection_time.tv_usec;
       }
 
-      if (ptr->state == Sent )
+      if (ptr->state == Sent)
       {
         Connection *next = ptr->next_ptr;
         close(ptr->socket_descriptor);

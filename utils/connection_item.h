@@ -10,6 +10,8 @@
 #include <sys/types.h>
 #include <sys/time.h>
 
+#include "file_utils.h"
+
 #include "request_manager.h"
 
 #define END_OF_HEADER_SIZE    4
@@ -60,7 +62,7 @@ typedef struct ConnectionStruct
   int32_t         datagram_socket;
   char            buffer[BUFSIZ];
   char            *request;
-  FILE            *resource_file;
+  FileComponents  file_components;
   char            *header;
   char            *end_of_header;
   struct timeval  last_connection_time;
