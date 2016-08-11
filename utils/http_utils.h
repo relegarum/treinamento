@@ -70,7 +70,8 @@ void create_default_response_files(char *path,
                                    FILE **internal_error_file,
                                    FILE **unauthorized_file,
                                    FILE **wrong_version_file,
-                                   FILE **not_implemented_file);
+                                   FILE **not_implemented_file,
+                                   FILE **forbidden_file);
 
 int setup_listening_connection(char* port, int32_t* listening_socket);
 
@@ -79,5 +80,6 @@ void clean_default_files();
 int32_t verify_protocol(char * protocol);
 
 int32_t set_socket_as_nonblocking(int socket_descriptor);
+int32_t set_socket_timeout(int socked_descriptor, struct timeval *timeout);
 
 #endif // HTTP_UTILS_H

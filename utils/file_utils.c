@@ -1,4 +1,5 @@
 #include "file_utils.h"
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -11,22 +12,31 @@ const char * const PutMark        = ".~put";
 
 #define PutMarkSize 5
 
-int file_exist( char *file_path)
-{
-  struct stat file_stats;
-  return (stat(file_path, &file_stats) == 0);
-}
-
 
 int32_t init_file_components(FileComponents *file,
                              char *file_path,
                              const int8_t flags)
 {
+  if (file == NULL)
+  {
+    printf("Trying to initialize a null FileComponent\n");
+    return FileComponentNull;
+  }
+
+  file->file_ptr = NULL;
+
   if (file_path == NULL ||
       file_path[0] == '\0')
   {
     printf("Wrong file path\n");
     return FilePathNull;
+  }
+
+  get_file_stats(file_path, &(file->stats));
+
+  if (!is_regular_file(file))
+  {
+    return NotARegularFile;
   }
 
   if (flags & ReadFile)
@@ -35,7 +45,8 @@ int32_t init_file_components(FileComponents *file,
   }
   else if (flags & WriteFile)
   {
-    if (write_treatment(file, file_path) == ExistentFile)
+    int8_t ret = write_treatment(file, file_path);
+    if (ret == ExistentFile)
     {
       return ret;
     }
@@ -58,19 +69,21 @@ void read_treatment(FileComponents *file, char *file_path)
 {
   size_t file_path_size = strlen(file_path);
   strncpy(file->file_path, file_path, file_path_size);
-  file->file_path[file_path_size + 1] = '\0';
+  file->file_path[file_path_size] = '\0';
   file->file_ptr = fopen(file->file_path, "rb");
 }
 
 int8_t write_treatment(FileComponents *file, char *file_path)
 {
-  if (file_exist(file_path))
+  snprintf(file->file_path, PATH_MAX, "%s%s", file_path, PutMark);
+
+  if (get_file_stats(file->file_path, &(file->stats)))
   {
-    snprintf(file->file_path, PATH_MAX, "%s%s", file_path, PutMark);
-    if (file_exist(file->file_path))
-    {
-      return ExistentFile;
-    }
+    return ExistentFile;
+  }
+
+  if (get_file_stats(file_path, &(file->stats)))
+  {
     file->is_new_file = 0;
   }
   else
@@ -93,7 +106,7 @@ int32_t destroy_file_components(FileComponents *file)
   return 0;
 }
 
-int8_t verify_file_path(char *path, char *resource, char *full_path)
+void setup_file_path(char *base_path, char *resource, char *full_path)
 {
   int32_t resource_size = strlen(resource);
   if ((strncmp(resource, "/", resource_size) == 0) ||
@@ -102,17 +115,24 @@ int8_t verify_file_path(char *path, char *resource, char *full_path)
     strncpy(resource, IndexStr, strlen(IndexStr));
   }
 
-  // build string
   resource_size = strlen(resource);
-  const int32_t path_size      = strlen(path);
+  const int32_t path_size      = strlen(base_path);
   const int32_t file_name_size = path_size + resource_size + 1;
+
+  snprintf(full_path, file_name_size, "%s%s", base_path, resource);
+}
+
+int8_t verify_file_path(char *base_path, char *full_path)
+{
   char real_path[PATH_MAX];
+
+  const int32_t path_size = strlen(base_path);
+
   memset(real_path, '\0', PATH_MAX);
-  snprintf(full_path, file_name_size, "%s%s", path, resource);
-  char* ret = realpath(full_path, real_path); /**/
+  realpath(full_path, real_path); /**/
   if (*real_path != '\0')
   {
-    if (strncmp(path, real_path, path_size) != 0)
+    if (strncmp(base_path, real_path, path_size) != 0)
     {
       char work_directory[PATH_MAX];
       if (getcwd(work_directory, PATH_MAX)!= NULL)
@@ -130,7 +150,6 @@ int8_t verify_file_path(char *path, char *resource, char *full_path)
   }
   else
   {
-    //printf("Directory not found\n");
     goto clear_full_path;
   }
 
@@ -166,29 +185,18 @@ int32_t get_file_mime(uint32_t full_path_size, char *full_path, char *mime)
   return 0;
 }
 
-int32_t rename_file_after_put(FileComponents *file)
+
+int32_t erase_put_mark(FileComponents *file)
 {
-  if (file == NULL)
-  {
-    printf("Null file component received\n");
-    return -1;
-  }
-
-  if (file->file_ptr != NULL)
-  {
-    fclose(file->file_ptr);
-    file->file_ptr = NULL;
-  }
-
-  uint32_t size_of_file_name = strlen(file->file_path);
-  if (size_of_file_name < PutMarkSize)
+  uint32_t name_size = strlen(file->file_path);
+  if (name_size < PutMarkSize)
   {
     printf("Invalid Name\n");
     return -1;
   }
 
-  uint32_t size_of_new_file_name  = size_of_file_name - PutMarkSize;
-  if (strncmp(file->file_path + size_of_new_file_name,
+  uint32_t name_size_without_put_mark  = name_size - PutMarkSize;
+  if (strncmp(file->file_path + name_size_without_put_mark,
               PutMark,
               PutMarkSize) != 0)
   {
@@ -197,10 +205,10 @@ int32_t rename_file_after_put(FileComponents *file)
   }
 
   char old_file_name[PATH_MAX];
-  strncpy(old_file_name,file->file_path, size_of_file_name);
-  strncpy(file->file_path,file->file_path, size_of_new_file_name);
-  old_file_name[size_of_file_name]       = '\0';
-  file->file_path[size_of_new_file_name] = '\0';
+  strncpy(old_file_name,file->file_path, name_size);
+  strncpy(file->file_path, old_file_name, name_size_without_put_mark);
+  old_file_name[name_size]       = '\0';
+  file->file_path[name_size_without_put_mark] = '\0';
 
   if (rename(old_file_name, file->file_path) < 0)
   {
@@ -212,8 +220,70 @@ int32_t rename_file_after_put(FileComponents *file)
   return 0;
 }
 
-
-int32_t is_valid_file(FileComponents *file)
+int32_t remove_file(FileComponents *file)
 {
-  return (file->file_ptr == NULL) ? 0 : 1;
+  if (remove(file->file_path) < 0)
+  {
+    perror("remove file:");
+    return -1;
+  }
+  return 0;
+}
+
+int32_t treat_file_after_put(FileComponents *file, uint8_t error)
+{
+  if (file == NULL)
+  {
+    printf("Null file component received\n");
+    return -1;
+  }
+
+  if (file->file_ptr == NULL)
+  {
+    printf("File is null\n");
+    return -1;
+  }
+
+  fclose(file->file_ptr);
+  file->file_ptr = NULL;
+
+  if (error)
+  {
+    return remove_file(file);
+  }
+  else
+  {
+    return erase_put_mark(file);
+  }
+}
+
+uint8_t get_file_stats(char *file_path, struct stat *file_stats)
+{
+  return (stat(file_path, file_stats) == 0);
+}
+
+uint8_t is_valid_file(FileComponents *file)
+{
+  uint8_t  ret = (file->file_ptr == NULL) ? 0 : 1;
+  return ret;
+}
+
+uint8_t is_regular_file(FileComponents *file)
+{
+  if (!S_ISREG(file->stats.st_mode))
+  {
+    return 0;
+  }
+
+  return 1;
+}
+
+uint8_t is_directory(FileComponents *file)
+{
+  if (!S_ISDIR(file->stats.st_mode))
+  {
+    return 0;
+  }
+
+  return 1;
 }

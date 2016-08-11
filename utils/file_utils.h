@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <limits.h>
+#include <sys/stat.h>
 
 extern const char *const IndexStr;
 extern const char *const PutMark;
@@ -17,18 +18,22 @@ enum FileFlags
 
 enum InitFileComponentsEnum
 {
-  Success      =  0,
-  FilePathNull = -1,
-  ExistentFile = -2,
-  UnknownFlag  = -3,
-  CoudntOpen   = -4
+  Success           =  0,
+  FilePathNull      = -1,
+  ExistentFile      = -2,
+  UnknownFlag       = -3,
+  CouldntOpen       = -4,
+  FileComponentNull = -5,
+  NotARegularFile   = -6
 };
 
 typedef struct file_struct
 {
-  FILE *file_ptr;
-  char file_path[PATH_MAX];
-  uint8_t new_file;
+  FILE        *file_ptr;
+  char        file_path[PATH_MAX];
+  uint8_t     is_new_file;
+  struct stat stats;
+
 }FileComponents;
 
 int32_t init_file_components(FileComponents *file,
@@ -37,9 +42,17 @@ int32_t init_file_components(FileComponents *file,
 
 int32_t destroy_file_components(FileComponents *file);
 
-int8_t  verify_file_path(char *path, char *resource, char *full_path);
+void read_treatment(FileComponents *file, char *file_path);
+int8_t write_treatment(FileComponents *file, char *file_path);
+
+void setup_file_path(char *base_path, char *resource, char *full_path);
+int8_t verify_file_path(char *base_path, char *full_path);
 int32_t get_file_mime(uint32_t full_path_size, char *full_path, char *mime);
-int32_t is_valid_file(FileComponents *file);
-int32_t rename_file_after_put(FileComponents *file);
+int32_t treat_file_after_put(FileComponents *file, uint8_t error);
+
+uint8_t get_file_stats(char *file_path, struct stat *file_stats);
+uint8_t is_valid_file(FileComponents *file);
+uint8_t is_regular_file(FileComponents *file);
+uint8_t is_directory(FileComponents *file);
 
 #endif /*FILE_UTILS_H*/

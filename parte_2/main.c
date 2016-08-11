@@ -188,7 +188,7 @@ int terminate = 0;
 
 void handle_sigint(int signal_number)
 {
-  printf("signal free1");
+  printf("Signal %d\n", signal_number);
 
   terminate = 1;
 
@@ -203,15 +203,6 @@ void setup_threads(thread *thread_pool,
   for (;index < pool_size; ++index)
   {
     init_thread(&(thread_pool[index]), manager, index);
-  }
-}
-
-void start_threads(thread *thread_pool, const uint32_t pool_size)
-{
-  uint32_t index = 0;
-  for (;index < pool_size; ++index)
-  {
-    start_thread(&(thread_pool[index]));
   }
 }
 
@@ -235,7 +226,7 @@ int main(int argc, char **argv)
 
   thread thread_pool[NUMBER_OF_THREADS];
   setup_threads(thread_pool, NUMBER_OF_THREADS, &req_manager);
-  start_threads(thread_pool, NUMBER_OF_THREADS);
+  start_thread_pool(thread_pool, NUMBER_OF_THREADS);
 
 
   int success = 0;
@@ -251,9 +242,10 @@ int main(int argc, char **argv)
                                 &internal_error_file,
                                 &unauthorized_file,
                                 &wrong_version_file,
-                                &not_implemented_file);
+                                &not_implemented_file,
+                                &forbidden_file);
 
-  const int32_t number_of_connections     = 200;
+  const int32_t number_of_connections     = 100;
   if( setup_listening_connection(port, &listening_sock_description) == -1 )
   {
     success = -1;
@@ -311,7 +303,6 @@ int main(int argc, char **argv)
    if ((ret == -1) || FD_ISSET(listening_sock_description, &except_fds) )
     {
       perror("select error");
-      printf("teste");
       success = -1;
       goto exit;
     }
@@ -393,19 +384,17 @@ int main(int argc, char **argv)
 
       if (ptr->state == WritingIntoFile)
       {
-        //write_data_into_file(ptr, ptr->file_components.file_ptr);
         queue_request_to_write(ptr, &req_manager);
       }
 
       if (ptr->state == ReadingFromFile)
       {
         queue_request_to_read(ptr, &req_manager, transmission_rate);
-        //read_data_from_file(ptr, transmission_rate);
       }
 
       if (ptr->state == WaitingFromIORead)
       {
-        receive_from_thread(ptr, transmission_rate);
+        receive_from_thread_read(ptr, transmission_rate);
       }
 
       if (ptr->state == WaitingFromIOWrite)
@@ -418,6 +407,8 @@ int main(int argc, char **argv)
         lowest.tv_sec = ptr->last_connection_time.tv_sec;
         lowest.tv_usec = ptr->last_connection_time.tv_usec;
       }
+
+      verify_connection_state(ptr);
 
       if (ptr->state == Sent ||
           ptr->state == Closed)
