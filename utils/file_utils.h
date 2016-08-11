@@ -28,6 +28,7 @@ typedef struct file_struct
 {
   FILE *file_ptr;
   char file_path[PATH_MAX];
+  uint8_t new_file;
 }FileComponents;
 
 int32_t init_file_components(FileComponents *file,

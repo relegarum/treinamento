@@ -31,19 +31,14 @@ int32_t init_file_components(FileComponents *file,
 
   if (flags & ReadFile)
   {
-    size_t file_path_size = strlen(file_path);
-    strncpy(file->file_path, file_path, file_path_size);
-    file->file_path[file_path_size + 1] = '\0';
-    file->file_ptr = fopen(file->file_path, "rb");
+    read_treatment(file, file_path);
   }
   else if (flags & WriteFile)
   {
-    snprintf(file->file_path, PATH_MAX, "%s%s", file_path, PutMark);
-    if (file_exist(file->file_path))
+    if (write_treatment(file, file_path) == ExistentFile)
     {
-      return ExistentFile;
+      return ret;
     }
-    file->file_ptr = fopen(file->file_path, "wb");
   }
   else
   {
@@ -53,8 +48,36 @@ int32_t init_file_components(FileComponents *file,
 
   if (file->file_ptr == NULL)
   {
-    return CoudntOpen;
+    return CouldntOpen;
   }
+
+  return Success;
+}
+
+void read_treatment(FileComponents *file, char *file_path)
+{
+  size_t file_path_size = strlen(file_path);
+  strncpy(file->file_path, file_path, file_path_size);
+  file->file_path[file_path_size + 1] = '\0';
+  file->file_ptr = fopen(file->file_path, "rb");
+}
+
+int8_t write_treatment(FileComponents *file, char *file_path)
+{
+  if (file_exist(file_path))
+  {
+    snprintf(file->file_path, PATH_MAX, "%s%s", file_path, PutMark);
+    if (file_exist(file->file_path))
+    {
+      return ExistentFile;
+    }
+    file->is_new_file = 0;
+  }
+  else
+  {
+    file->is_new_file = 1;
+  }
+  file->file_ptr = fopen(file->file_path, "wb");
 
   return Success;
 }
