@@ -38,7 +38,7 @@ const char * const HeaderInternalError  = "HTTP/1.0 500 Internal Server Error\r\
 const char * const HeaderUnauthorized   = "HTTP/1.0 401 Unauthorized\r\n\r\n";
 const char * const HeaderWrongVersion   = "HTTP/1.0 505 HTTP Version Not Supported\r\n\r\n";
 const char * const HeaderNotImplemented = "HTTP/1.0 501 HTTP Not Implemented\r\n\r\n";
-const char * const HeaderForbidden      = "HTTP/1.0 403 HTTP Forbidden\r\n\r\n";
+const char * const HeaderForbidden      = "HTTP/1.0 403 HTTP Forbidden\r\n\r\n\r\n";
 const char * const EndOfHeader    = "\r\n\r\n";
 const char * const RequestMsgMask = "GET %s HTTP/1.0\r\n\r\n";
 
@@ -73,6 +73,9 @@ void init_connection_item(Connection *item, int socket_descriptor, uint32_t id)
   item->previous_ptr         = NULL;
   item->datagram_socket      = -1;
 
+  init_file_components(&(item->file_components));
+
+
   item->last_connection_time.tv_sec = 0;
   item->last_connection_time.tv_usec = 0;
 }
@@ -90,15 +93,14 @@ void free_connection_item(Connection *item)
     item->socket_descriptor = -1;
   }
 
-  if (item->error != 1)
+  if (!item->error)
   {
     destroy_file_components(&item->file_components);
-  }
-
-  if (item->header != NULL)
-  {
-    free(item->header);
-    item->header = NULL;
+    if (item->header != NULL)
+    {
+      free(item->header);
+      item->header = NULL;
+    }
   }
 
   if (item->request != NULL)
@@ -269,24 +271,24 @@ void handle_request(Connection *item, char *path)
   }
   setup_file_path(path, resource, file_final_path);
 
-  if (verify_file_path(path, file_final_path) != 0)
+  /*if (verify_file_path(path, file_final_path) != 0)
   {
     item->header = strdup(HeaderNotFound);
     item->file_components.file_ptr = not_found_file;
     item->error = 1;
     goto exit_handle;
-  }
+  }*/
 
   if (strncmp(operation, "GET", OPERATION_SIZE) == 0)
   {
-    if (handle_get_method(item, file_final_path) != 0 )
+    if (handle_get_method(item, path, file_final_path) != 0 )
     {
       goto exit_handle;
     }
   }
   else if (strncmp(operation, "PUT", OPERATION_SIZE) == 0)
   {
-    if (handle_put_method(item, file_final_path) != 0)
+    if (handle_put_method(item, path, file_final_path) != 0)
     {
       goto exit_handle;
     }
@@ -313,6 +315,20 @@ exit_handle:
   }
   item->state = SendingHeader;
   return;
+}
+
+void tread_methods(Connection *item, char *path)
+{
+  if (item->method == Get)
+  {
+    //if (handle_get_method(item, path)
+
+  }
+  else if (item->method == Put)
+  {
+
+  }
+
 }
 
 int32_t get_resource_data(Connection *item, char *file_name, char *mime)
@@ -350,8 +366,8 @@ int32_t send_header(Connection *item, const uint32_t transmission_rate)
 {
   int32_t socket_descriptor = item->socket_descriptor;
 
-  uint32_t total_bytes_sent  = 0;
-  uint32_t header_size       = strlen(item->header);
+  uint64_t total_bytes_sent  = 0;
+  uint64_t header_size       = strlen(item->header);
   uint32_t rate = (BUFSIZ < transmission_rate)? BUFSIZ: transmission_rate;
 
   if ((header_size - item->wrote_data) < rate)
@@ -362,8 +378,8 @@ int32_t send_header(Connection *item, const uint32_t transmission_rate)
   while (total_bytes_sent < rate &&
          total_bytes_sent < header_size)
   {
-    int32_t bytes_to_sent = rate - total_bytes_sent;
-    int32_t bytes_sent = send(socket_descriptor,
+    uint64_t bytes_to_sent = rate - total_bytes_sent;
+    int64_t bytes_sent = send(socket_descriptor,
                               carriage,
                               bytes_to_sent,
                               MSG_NOSIGNAL);
@@ -395,26 +411,27 @@ int32_t send_header(Connection *item, const uint32_t transmission_rate)
 int32_t send_resource(Connection *item, const int32_t transmission_rate)
 {
   int ret = 0;
-  uint32_t rate = (BUFSIZ < transmission_rate)? BUFSIZ: transmission_rate;
-  int32_t bytes_read = item->read_file_data;
+  uint64_t rate = (BUFSIZ < transmission_rate)? BUFSIZ: transmission_rate;
+  int64_t bytes_read = item->read_file_data;
 
-  int32_t bytes_sent = 0;
+
+  int64_t bytes_sent = 0;
   int32_t socket_descriptor = item->socket_descriptor;
   if (bytes_read > 0)
   {
-    if ((uint32_t)bytes_read < rate)
+    if ((uint64_t)bytes_read < rate)
     {
       rate = bytes_read;
     }
-    uint32_t total_byte_sent = 0;
+    uint64_t total_byte_sent = 0;
     char *carriage = item->buffer;
 
     while (total_byte_sent != rate)
     {
-      int32_t bytes_to_sent = rate - total_byte_sent;
+      int32_t bytes_to_send = rate - total_byte_sent;
       bytes_sent = send(socket_descriptor,
                         carriage,
-                        bytes_to_sent,
+                        bytes_to_send,
                         MSG_NOSIGNAL);
       if (bytes_sent == -1)
       {
@@ -437,6 +454,23 @@ int32_t send_resource(Connection *item, const int32_t transmission_rate)
 
 exit_send_resource:
   return ret;
+}
+
+void handle_new_socket(int new_socket_description,
+                       fd_set *master,
+                       int *greatest_socket_description)
+{
+  FD_SET(new_socket_description, master);
+
+  /*if (set_socket_as_nonblocking(new_socket_description))
+  {
+    return -1;
+  }*/
+
+  if (new_socket_description > *greatest_socket_description)
+  {
+    *greatest_socket_description = new_socket_description;
+  }
 }
 
 void setup_header(Connection *item, char *mime)
@@ -480,7 +514,9 @@ void setup_header(Connection *item, char *mime)
 
 void queue_request_to_read(Connection *item,
                            request_manager *manager,
-                           const uint32_t transmission_rate)
+                           const uint32_t transmission_rate,
+                           fd_set *master,
+                           int *greatest_socket_description)
 {
   if (!is_valid_file(&(item->file_components)))
   {
@@ -491,17 +527,19 @@ void queue_request_to_read(Connection *item,
   int socket_pair[2];
   if (socketpair(AF_UNIX, SOCK_DGRAM, 0, socket_pair))
   {
-    perror("socketPair");
+    perror("Get socket_pair error");
   }
 
   item->datagram_socket = socket_pair[0];
   int io_thread_socket  = socket_pair[1];
 
+  handle_new_socket(item->datagram_socket, master, greatest_socket_description);
+
   //set_socket_as_nonblocking(item->datagram_socket)
-  struct timeval timeout;
+  /*struct timeval timeout;
   timeout.tv_sec = 0;
-  timeout.tv_usec = 1000; // 100ms
-  set_socket_timeout(item->datagram_socket, &timeout);
+  timeout.tv_usec = 1000; // 1ms
+  set_socket_timeout(item->datagram_socket, &timeout);*/
 
   uint32_t rate = (BUFSIZ < transmission_rate)? BUFSIZ - 1: transmission_rate;
   request_list_node *node = create_request_to_read(item->file_components.file_ptr,
@@ -513,27 +551,30 @@ void queue_request_to_read(Connection *item,
 }
 
 
-void receive_from_thread_read(Connection *item, const uint32_t transmission_rate)
+void receive_from_thread_read(Connection *item,
+                              const uint32_t transmission_rate,
+                              fd_set *master)
 {
-  uint32_t rate = (BUFSIZ - 1 < transmission_rate)? BUFSIZ - 1 :
+  uint64_t rate = (BUFSIZ - 1 < transmission_rate)? BUFSIZ - 1 :
                                                     transmission_rate;
-  int32_t read_data = read(item->datagram_socket, item->buffer, rate);
+  int64_t read_data = read(item->datagram_socket, item->buffer, rate);
   if (read_data < 0)
   {
     if (errno == EAGAIN ||
         errno == EWOULDBLOCK)
     {
-      item->tries++;
+      /*item->tries++;*/
       return;
     }
 
-    perror("read error");
+    perror(__FUNCTION__);
     if (errno == EBADF)
     {
       item->state = ReadingFromFile;
     }
     else
     {
+      FD_CLR(item->datagram_socket, master);
       item->state = Sent;
     }
     return;
@@ -542,19 +583,30 @@ void receive_from_thread_read(Connection *item, const uint32_t transmission_rate
   if (read_data == 0)
   {
     item->state = Sent;
+    return;
   }
 
   /*printf("Tries until read: %d\n", item->tries);*/
+  FD_CLR(item->datagram_socket, master);
   close(item->datagram_socket);
+
   item->read_file_data = read_data;
   item->state = SendingResource;
 }
 
-int32_t handle_get_method(Connection *item, char *file_name)
+int32_t handle_get_method(Connection *item, char *path, char *full_path)
 {
   item->method = Get;
 
-  int32_t ret = init_file_components(&(item->file_components), file_name, ReadFile);
+  if (verify_file_path(path, full_path) != 0)
+  {
+    item->header = strdup(HeaderNotFound);
+    item->file_components.file_ptr = not_found_file;
+    item->error = 1;
+    return item->error;
+  }
+
+  int32_t ret = set_file_components(&(item->file_components), full_path, ReadFile);
   if (ret == NotARegularFile)
   {
     item->header = strdup(HeaderForbidden);
@@ -570,12 +622,21 @@ int32_t handle_get_method(Connection *item, char *file_name)
 }
 
 
-int32_t handle_put_method(Connection *item, char *file_name)
+int32_t handle_put_method(Connection *item, char *path, char *full_path)
 {
   item->method = Put;
   int32_t ret = 0;
 
-  ret = init_file_components(&(item->file_components), file_name, WriteFile);
+  if (verify_file_path(path, full_path) != 0 )
+  {
+    item->header = strdup(HeaderForbidden);
+    item->file_components.file_ptr = forbidden_file;
+    item->error = 1;
+    ret = 1;
+    goto exit_handle;
+  }
+
+  ret = set_file_components(&(item->file_components), full_path, WriteFile);
   if (ret == ExistentFile )
   {
     item->header = strdup(HeaderConflict);
@@ -748,7 +809,9 @@ int32_t receive_data_from_put(Connection *item, const uint32_t transmission_rate
 
 
 void queue_request_to_write(Connection *item,
-                            request_manager *manager)
+                            request_manager *manager,
+                            fd_set *master,
+                            int *greatest_socket_description)
 
 {
   int socket_pair[2];
@@ -760,7 +823,9 @@ void queue_request_to_write(Connection *item,
   item->datagram_socket = socket_pair[0];
   int io_thread_socket  = socket_pair[1];
 
-  set_socket_as_nonblocking(item->datagram_socket);
+  handle_new_socket(item->datagram_socket, master, greatest_socket_description);
+
+  //set_socket_as_nonblocking(item->datagram_socket);
 
   request_list_node *node = create_request_to_write(item->file_components.file_ptr,
                                                     item->buffer,
@@ -771,7 +836,7 @@ void queue_request_to_write(Connection *item,
   item->state = WaitingFromIOWrite;
 }
 
-void receive_from_thread_write(Connection *item)
+void receive_from_thread_write(Connection *item, fd_set *master)
 {
   uint32_t data_wrote = 0;
   /*uint32_t rate = (BUFSIZ - 1 < transmission_rate)? BUFSIZ - 1: transmission_rate;*/
@@ -784,7 +849,7 @@ void receive_from_thread_write(Connection *item)
       return;
     }
 
-    perror("read error");
+    perror(__FUNCTION__);
     if (errno == EBADF)
     {
       item->state = WritingIntoFile;
@@ -813,7 +878,7 @@ void receive_from_thread_write(Connection *item)
       item->state  = SendingHeader;
       item->header = strdup(HeaderInternalError);
       item->error  = 1;
-    }
+    }    
   }
 
   if (item->wrote_data >= item->resource_size)
@@ -831,5 +896,6 @@ void receive_from_thread_write(Connection *item)
     return;
   }
 
+  FD_CLR(item->datagram_socket, master);
   close(item->datagram_socket);
 }

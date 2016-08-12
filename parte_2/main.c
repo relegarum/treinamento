@@ -54,7 +54,7 @@ int32_t* listening_socket_ptr  = NULL;
 int32_t handle_arguments(int argc,
                          char **argv,
                          char **port,
-                         char **path,
+                         char *path,
                          int32_t* transmission_rate)
 {
   const int32_t index_of_executable         = 0;
@@ -80,15 +80,27 @@ int32_t handle_arguments(int argc,
   }
 
   *port = argv[index_of_port];
-  *path = argv[index_of_path];
 
-  DIR *dir = opendir(*path);
+  DIR *dir = opendir(argv[index_of_path]);
   if (dir == NULL)
   {
     printf(" invalid path! Please use a valid path!\n");
     return -1;
   }
   closedir(dir);
+
+  if (strcmp(argv[index_of_path], ".") == 0)
+  {
+    if (getcwd(path, PATH_MAX) == NULL)
+    {
+      printf(" couldn't get the working directory\n");
+      return -1;
+    }
+  }
+  else
+  {
+    strncpy(path,argv[index_of_path], strlen(argv[index_of_path]));
+  }
 
   if (argc < 4)
   {
@@ -216,7 +228,7 @@ int main(int argc, char **argv)
   int32_t transmission_rate    = 0;
 
   char *port = NULL;
-  char *path = NULL;
+  char path[PATH_MAX];
 
   ConnectionManager manager = create_manager();
   manager_ptr = &manager;
@@ -230,7 +242,7 @@ int main(int argc, char **argv)
 
 
   int success = 0;
-  if (handle_arguments(argc, argv, &port, &path, &transmission_rate) == -1)
+  if (handle_arguments(argc, argv, &port, path, &transmission_rate) == -1)
   {
     success = 1;
     goto exit;
@@ -245,7 +257,7 @@ int main(int argc, char **argv)
                                 &not_implemented_file,
                                 &forbidden_file);
 
-  const int32_t number_of_connections     = 100;
+  const int32_t number_of_connections     = 300;
   if( setup_listening_connection(port, &listening_sock_description) == -1 )
   {
     success = -1;
@@ -384,22 +396,24 @@ int main(int argc, char **argv)
 
       if (ptr->state == WritingIntoFile)
       {
-        queue_request_to_write(ptr, &req_manager);
+        queue_request_to_write(ptr, &req_manager, &master, &greatest_file_desc);
       }
 
       if (ptr->state == ReadingFromFile)
       {
-        queue_request_to_read(ptr, &req_manager, transmission_rate);
+        queue_request_to_read(ptr, &req_manager, transmission_rate, &master, &greatest_file_desc);
       }
 
-      if (ptr->state == WaitingFromIORead)
+      if (ptr->state == WaitingFromIORead &&
+          FD_ISSET(ptr->datagram_socket, &read_fds))
       {
-        receive_from_thread_read(ptr, transmission_rate);
+        receive_from_thread_read(ptr, transmission_rate, &master);
       }
 
-      if (ptr->state == WaitingFromIOWrite)
+      if (ptr->state == WaitingFromIOWrite &&
+          FD_ISSET(ptr->datagram_socket, &read_fds))
       {
-        receive_from_thread_write(ptr);
+        receive_from_thread_write(ptr, &master);
       }
 
       if (timercmp(&(ptr->last_connection_time), &lowest, <))
@@ -416,6 +430,8 @@ int main(int argc, char **argv)
         Connection *next = ptr->next_ptr;
         close(ptr->socket_descriptor);
         FD_CLR(ptr->socket_descriptor, &master);
+        close(ptr->datagram_socket);
+        FD_CLR(ptr->datagram_socket, &master);
         remove_connection_in_list(&manager, ptr);
         ptr = next;
       }
