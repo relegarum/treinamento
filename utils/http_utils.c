@@ -28,6 +28,14 @@ const char *HtmlForbiddenFileName            = "Forbidden.html";
 const char *HTTP10Str                = "HTTP/1.0";
 const char *HTTP11Str                = "HTTP/1.1";
 
+FILE *bad_request_file     = NULL;
+FILE *not_found_file       = NULL;
+FILE *internal_error_file  = NULL;
+FILE *unauthorized_file    = NULL;
+FILE *wrong_version_file   = NULL;
+FILE *not_implemented_file = NULL;
+FILE *forbidden_file       = NULL;
+
 uint32_t   g_id = 0;
 
 #define HTML_HEADER(number, string) "HTTP/1.0 "#number" "#string"\r\n";
@@ -198,7 +206,7 @@ int32_t download_file(int socket_descriptor,
     bytes_sent = send(socket_descriptor, &request_msg[total_bytes_sent], attempt_size, 0);
     if (bytes_sent == -1)
     {
-        perror( "Error in send" );
+        perror(__FUNCTION__);
         return -1;
     }
     total_bytes_sent += bytes_sent;
@@ -299,13 +307,13 @@ int verify_connection(ConnectionManager *manager,
     {
       Connection* item = create_connection_item(new_socket_description, ++g_id);
       add_connection_in_list(manager, item);
-      FD_SET(new_socket_description, master);
 
+      handle_new_socket( new_socket_description, master, greatest_fds);
       if (set_socket_as_nonblocking(new_socket_description))
       {
+        perror("set as nonblock");
         return -1;
       }
-
 
       //char remote_ip[INET6_ADDRSTRLEN];
       /*inet_ntop(client_address.ss_family,
@@ -314,10 +322,10 @@ int verify_connection(ConnectionManager *manager,
                 sizeof(remote_ip));*/
 
       //printf("Connection from %s -> socket_num = %d\n", remote_ip, new_socket_description);
-      if (new_socket_description > *greatest_fds)
+      /*if (new_socket_description > *greatest_fds)
       {
         *greatest_fds = new_socket_description;
-      }
+      }*/
     }
   }
   return 0;
@@ -347,77 +355,36 @@ int8_t create_file(FILE **file,
   return 0;
 }
 
-void create_default_response_files(char *path,
-                                   FILE **bad_request_file,
-                                   FILE **not_found_file,
-                                   FILE **internal_error_file,
-                                   FILE **unauthorized_file,
-                                   FILE **version_wrong_file,
-                                   FILE **not_implemented_file,
-                                   FILE **forbidden_file)
+void free_file(FILE **file)
 {
+  if (*file != NULL)
+  {
+    fclose(*file);
+    *file = NULL;
+  }
+}
 
-  *bad_request_file     = NULL;
-  *not_found_file       = NULL;
-  *internal_error_file  = NULL;
-  *unauthorized_file    = NULL;
-  *version_wrong_file   = NULL;
-  *not_implemented_file = NULL;
-  *forbidden_file       = NULL;
-
+void create_default_response_files(char *path)
+{
   int32_t path_length = strlen(path);
-  create_file(bad_request_file,     HTML_ERROR(400, Bad Request),                path, path_length, HtmlBadRequestFileName);
-  create_file(internal_error_file,  HTML_ERROR(500, Internal Server Error),      path, path_length, HtmlInternalErrorName);
-  create_file(not_found_file,       HTML_ERROR(404, Not Found),                  path, path_length, HtmlNotFoundFileName);
-  create_file(unauthorized_file,    HTML_ERROR(401, Unauthorized),               path, path_length, HtmlUnauthorizedFileName);
-  create_file(version_wrong_file,   HTML_ERROR(505, HTTP Version Not Supported), path, path_length, HtmlWrongVersionFileName);
-  create_file(not_implemented_file, HTML_ERROR(501, HTTP Not Implemented),       path, path_length, HtmlNotImplementedFileName);
-  create_file(forbidden_file,       HTML_ERROR(403, HTTP Forbidden),             path, path_length, HtmlForbiddenFileName);
+  create_file(&bad_request_file,     HTML_ERROR(400, Bad Request),                path, path_length, HtmlBadRequestFileName);
+  create_file(&internal_error_file,  HTML_ERROR(500, Internal Server Error),      path, path_length, HtmlInternalErrorName);
+  create_file(&not_found_file,       HTML_ERROR(404, Not Found),                  path, path_length, HtmlNotFoundFileName);
+  create_file(&unauthorized_file,    HTML_ERROR(401, Unauthorized),               path, path_length, HtmlUnauthorizedFileName);
+  create_file(&wrong_version_file,   HTML_ERROR(505, HTTP Version Not Supported), path, path_length, HtmlWrongVersionFileName);
+  create_file(&not_implemented_file, HTML_ERROR(501, HTTP Not Implemented),       path, path_length, HtmlNotImplementedFileName);
+  create_file(&forbidden_file,       HTML_ERROR(403, HTTP Forbidden),             path, path_length, HtmlForbiddenFileName);
 }
 
 void clean_default_files()
 {
-  if (bad_request_file != NULL)
-  {
-    fclose(bad_request_file);
-    bad_request_file = NULL;
-  }
-
-  if (not_found_file != NULL)
-  {
-    fclose(not_found_file);
-    not_found_file = NULL;
-  }
-
-  if (internal_error_file != NULL)
-  {
-    fclose(internal_error_file);
-    internal_error_file = NULL;
-  }
-
-  if (unauthorized_file != NULL)
-  {
-    fclose(unauthorized_file);
-    unauthorized_file = NULL;
-  }
-
-  if (wrong_version_file != NULL)
-  {
-    fclose(wrong_version_file);
-    wrong_version_file = NULL;
-  }
-
-  if (not_implemented_file != NULL)
-  {
-    fclose(not_implemented_file);
-    not_implemented_file = NULL;
-  }
-
-  if (forbidden_file != NULL)
-  {
-    fclose(forbidden_file);
-    forbidden_file = NULL;
-  }
+  free_file(&bad_request_file);
+  free_file(&not_found_file);
+  free_file(&internal_error_file);
+  free_file(&unauthorized_file);
+  free_file(&wrong_version_file);
+  free_file(&not_implemented_file);
+  free_file(&forbidden_file);
 }
 
 

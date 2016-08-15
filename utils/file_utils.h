@@ -33,6 +33,7 @@ typedef struct file_struct
   char        file_path[PATH_MAX];
   uint8_t     is_new_file;
   struct stat stats;
+  uint8_t     should_delete;
 
 }FileComponents;
 

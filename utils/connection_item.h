@@ -101,9 +101,16 @@ int32_t send_header(Connection *item, const uint32_t transmission_rate);
 int32_t send_resource(Connection *item, const int32_t transmission_rate);
 
 /* Utils */
+int32_t verify_if_has_to_exchange_data(Connection* item);
 int32_t get_resource_data(Connection *item, char *file_name, char *mime);
 void setup_header(Connection *item, char *mime);
 void handle_request(Connection *item, char *path);
+void handle_new_socket(int new_socket_description,
+                       fd_set *master,
+                       int *greatest_socket_description);
+
+void close_socket(int *socket,
+                  fd_set *master);
 
 int32_t handle_get_method(Connection *item, char *resource, char *full_path);
 int32_t handle_put_method(Connection *item, char *resouce, char *full_path);
@@ -111,8 +118,8 @@ int32_t get_file_state(Connection *item);
 int32_t extract_content_length_from_header(Connection *item);
 
 /*PUT related functions*/
-void write_data_into_file(Connection *item,
-                          FILE *resource_file);
+/*void write_data_into_file(Connection *item,
+                          FILE *resource_file);*/
 
 int32_t receive_data_from_put(Connection *item,
                               const uint32_t transmission_rate);
@@ -122,7 +129,7 @@ void queue_request_to_write(Connection *item,
                             fd_set *master,
                             int *greatest_socket_description);
 
-void receive_from_thread_write(Connection *item, fd_set *master);
+void receive_from_thread_write(Connection *item);
 
 /* Thread related functions */
 void queue_request_to_read(Connection *item,
@@ -137,20 +144,10 @@ void queue_request_to_write(Connection *item,
                             int *greatest_socket_description);
 
 void receive_from_thread_read(Connection *item,
-                              const uint32_t transmission_rate,
-                              fd_set *master);
+                              const uint32_t transmission_rate);
 
-void receive_from_thread_write(Connection *item, fd_set *master);
+void receive_from_thread_write(Connection *item);
 
 void verify_connection_state(Connection *item);
-
-
-FILE *bad_request_file;
-FILE *not_found_file;
-FILE *internal_error_file;
-FILE *unauthorized_file;
-FILE *wrong_version_file;
-FILE *not_implemented_file;
-FILE *forbidden_file;
 
 #endif /* CONNECTION_ITEM_H*/

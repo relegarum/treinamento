@@ -9,6 +9,14 @@
 #include "connection_manager.h"
 #include "connection_item.h"
 
+extern FILE *bad_request_file    ;
+extern FILE *not_found_file      ;
+extern FILE *internal_error_file ;
+extern FILE *unauthorized_file   ;
+extern FILE *wrong_version_file  ;
+extern FILE *not_implemented_file;
+extern FILE *forbidden_file      ;
+
 /* Possible response status from HTTP */
 enum HTTP_STATUS
 {
@@ -64,14 +72,7 @@ int verify_connection(ConnectionManager *manager,
                       fd_set *master,
                       int *greatest_fds );
 
-void create_default_response_files(char *path,
-                                   FILE **bad_request_file,
-                                   FILE **not_found_file,
-                                   FILE **internal_error_file,
-                                   FILE **unauthorized_file,
-                                   FILE **wrong_version_file,
-                                   FILE **not_implemented_file,
-                                   FILE **forbidden_file);
+void create_default_response_files(char *path);
 
 int setup_listening_connection(char* port, int32_t* listening_socket);
 
@@ -81,5 +82,6 @@ int32_t verify_protocol(char * protocol);
 
 int32_t set_socket_as_nonblocking(int socket_descriptor);
 int32_t set_socket_timeout(int socked_descriptor, struct timeval *timeout);
+
 
 #endif // HTTP_UTILS_H

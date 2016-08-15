@@ -45,6 +45,7 @@
 #include "../utils/test_suit.h"
 
 #define MAX_TIMEOUT 9999
+#define MAX_RETRIES 1000
 #define NUMBER_OF_THREADS 8
 
 ConnectionManager* manager_ptr = NULL;
@@ -152,50 +153,6 @@ useconds_t calculate_time_to_sleep(const ConnectionManager *manager,
   return 0;
 }
 
-int32_t verify_if_has_to_exchange_data(Connection* item)
-{
-  struct timeval next;
-  next.tv_sec = item->last_connection_time.tv_sec + 1;
-  next.tv_usec = item->last_connection_time.tv_usec;
-  struct timeval now;
-  gettimeofday(&now, NULL);
-
-  return (timercmp(&now, &next, >));
-}
-
-void setup_deamon()
-{
-  pid_t pid;
-  pid_t sid;
-
-  pid = fork();
-  if (pid < 0)
-  {
-    exit(EXIT_FAILURE);
-  }
-
-  if (pid > 0)
-  {
-    exit(EXIT_SUCCESS);
-  }
-
-  umask(0);
-  sid = setsid();
-  if (sid < 0)
-  {
-    exit(EXIT_FAILURE);
-  }
-
-  if ((chdir("/")) < 0)
-  {
-    exit(EXIT_FAILURE);
-  }
-
-  close(STDIN_FILENO);
-  close(STDOUT_FILENO);
-  close(STDERR_FILENO);
-}
-
 int terminate = 0;
 
 void handle_sigint(int signal_number)
@@ -218,12 +175,25 @@ void setup_threads(thread *thread_pool,
   }
 }
 
+void handle_socket_destroy(int *socket,
+                           ConnectionManager *manager,
+                           int *greatest,
+                           fd_set *master)
+{
+  close_socket(socket, master);
+  if (*socket == *greatest)
+  {
+    *greatest = get_greatest_socket_descriptor(manager);
+  }
+}
+
 int main(int argc, char **argv)
 {
   //test_rename();
   //return 0;
 
-  /*setup_deamon();*/
+  //setup_deamon();
+  //daemon(0 , 0);
   int32_t listening_sock_description = -1;
   int32_t transmission_rate    = 0;
 
@@ -248,14 +218,7 @@ int main(int argc, char **argv)
     goto exit;
   }
 
-  create_default_response_files(path,
-                                &bad_request_file,
-                                &not_found_file,
-                                &internal_error_file,
-                                &unauthorized_file,
-                                &wrong_version_file,
-                                &not_implemented_file,
-                                &forbidden_file);
+  create_default_response_files(path);
 
   const int32_t number_of_connections     = 300;
   if( setup_listening_connection(port, &listening_sock_description) == -1 )
@@ -347,8 +310,7 @@ int main(int argc, char **argv)
             allinactive &= 0;
             if (receive_request(ptr, transmission_rate) == -1)
             {
-              success = -1;
-              goto exit;
+              ptr->state = Closed;
             }
           }
 
@@ -356,8 +318,7 @@ int main(int argc, char **argv)
           {
             if (receive_data_from_put(ptr, transmission_rate) == -1)
             {
-              success = -1;
-              goto exit;
+              ptr->state = Closed;
             }
           }
 
@@ -378,12 +339,18 @@ int main(int argc, char **argv)
           allinactive &= 0;
           if (ptr->state == SendingHeader)
           {
-            send_header(ptr, transmission_rate);
+            if (send_header(ptr, transmission_rate) == -1)
+            {
+              ptr->state = Closed;
+            }
           }
 
           if (ptr->state == SendingResource)
           {
-            send_response(ptr, transmission_rate);
+            if (send_response(ptr, transmission_rate) == -1)
+            {
+              ptr->state = Closed;
+            }
           }
 
           if (ptr->partial_wrote + BUFSIZ > (uint32_t )transmission_rate)
@@ -407,13 +374,38 @@ int main(int argc, char **argv)
       if (ptr->state == WaitingFromIORead &&
           FD_ISSET(ptr->datagram_socket, &read_fds))
       {
-        receive_from_thread_read(ptr, transmission_rate, &master);
+        receive_from_thread_read(ptr, transmission_rate);
+        if (ptr->state != ReadingFromFile)
+        {
+          handle_socket_destroy(&ptr->datagram_socket,
+                                &manager,
+                                &greatest_file_desc,
+                                &master);
+        }
       }
 
-      if (ptr->state == WaitingFromIOWrite &&
-          FD_ISSET(ptr->datagram_socket, &read_fds))
+      if (ptr->state == WaitingFromIOWrite /*&&
+          FD_ISSET(ptr->datagram_socket, &read_fds)*/)
       {
-        receive_from_thread_write(ptr, &master);
+        if (FD_ISSET(ptr->datagram_socket, &read_fds))
+        {
+          receive_from_thread_write(ptr);
+          if (ptr->state != WaitingFromIOWrite)
+          {
+            handle_socket_destroy(&ptr->datagram_socket,
+                                  &manager,
+                                  &greatest_file_desc,
+                                  &master);
+          }
+        }
+        else if (ptr->tries < MAX_RETRIES)
+        {
+          ++(ptr->tries);
+        }
+        else
+        {
+          ptr->state = Closed;
+        }
       }
 
       if (timercmp(&(ptr->last_connection_time), &lowest, <))
@@ -428,10 +420,16 @@ int main(int argc, char **argv)
           ptr->state == Closed)
       {
         Connection *next = ptr->next_ptr;
-        close(ptr->socket_descriptor);
-        FD_CLR(ptr->socket_descriptor, &master);
-        close(ptr->datagram_socket);
-        FD_CLR(ptr->datagram_socket, &master);
+
+        handle_socket_destroy(&ptr->socket_descriptor,
+                              &manager,
+                              &greatest_file_desc,
+                              &master);
+
+        handle_socket_destroy(&ptr->datagram_socket,
+                              &manager,
+                              &greatest_file_desc,
+                              &master);
         remove_connection_in_list(&manager, ptr);
         ptr = next;
       }
