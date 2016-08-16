@@ -368,6 +368,7 @@ void free_file(FILE **file)
 
 void create_default_response_files(char *path)
 {
+  printf("path %s", path);
   int32_t path_length = strlen(path);
   create_file(&bad_request_file,     HTML_ERROR(400, Bad Request),                path, path_length, HtmlBadRequestFileName);
   create_file(&internal_error_file,  HTML_ERROR(500, Internal Server Error),      path, path_length, HtmlInternalErrorName);

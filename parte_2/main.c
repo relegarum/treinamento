@@ -121,6 +121,7 @@ int32_t handle_arguments(int argc,
     }
   }
 
+  printf("base path: %s\n", path);
   return 0;
 }
 
@@ -199,6 +200,7 @@ int main(int argc, char **argv)
 
   char *port = NULL;
   char path[PATH_MAX];
+  memset(path, '\0', PATH_MAX);
 
   ConnectionManager manager = create_manager();
   manager_ptr = &manager;

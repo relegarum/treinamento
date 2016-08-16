@@ -7,7 +7,9 @@ import time
 PORT  = "2196"
 IP = "localhost"
 
-file_urls = IP +':' + PORT + '/teste.tar'
+download_file = '/index.html'
+upload_file   = 'teste.tar.put'
+file_urls = IP +':' + PORT + download_file
 #file_urls = [IP +':' + PORT + '/pdfs/evolucaoDosCodecs.pdf',
 #            IP + ':' + PORT + '/imgs/lena.jpeg',
 #            IP +':' + PORT + '/imgs/mandrill.png',
@@ -15,18 +17,26 @@ file_urls = IP +':' + PORT + '/teste.tar'
 #            IP +':' + PORT + '/teste']
 process_list = []
 
-def download_file(file_url, fileout_name, i):
-  print('Download start ---> '+ str(i)+ ' - ' + fileout_name)
+def uploadFile(index):
+
+  print('Upload start --->' + str(index))
+  os.system("curl " + IP + ":" + PORT + "/arquivos_download/" + upload_file + ".put_" + str(index) +
+" --no-keepalive --progress-bar --upload-file " + upload_file )
+
+def downloadFile(file_url, fileout_name,index): 
+  print('Download start ---> '+ str(index)+ ' - ' + fileout_name)
   os.system('wget -nc  ' + file_url + ' -O arquivos_download/' 
-    + fileout_name + "_" + str(i) )
-  print('#### Download end ---> '+ str(i) +' - '+ fileout_name + " ") 
-  os.system('cmp ' + fileout_name  + ' arquivos_download/' + fileout_name + '_' + str(i)) 
-#os.system('curl -s --url 10.4.3.1:8080/teste_4gb.iso -o teste_4gb_ini.iso')
-for i in range(0,4):
+    + fileout_name + "_" + str(index) )
+  print('#### Download end ---> '+ str(index) +' - '+ fileout_name + " ") 
+  os.system('cmp ' + fileout_name  + ' arquivos_download/' + fileout_name + '_' + str(index)) 
+for i in range(0,20):
   print("-----------------------------------------------------")
-  p = Process(target=download_file,
-args=(file_urls,file_urls[file_urls.rfind('/')+1:],i, ))
-  p.start()
+  #if i % 2 == 0:
+  if 0:
+    p = Process(target=downloadFile, args=(file_urls,file_urls[file_urls.rfind('/')+1:],i, ))
+    p.start()
+  else:
+    p = Process(target=uploadFile, args=(i, )).start()
   print("   #################  %d  ####################" % i)
 #for i in xrange(len(file_urls)):
 print("*******************************************************")
