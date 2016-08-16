@@ -37,6 +37,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 
+
 #include "../utils/connection_manager.h"
 #include "../utils/connection_item.h"
 #include "../utils/http_utils.h"
@@ -111,7 +112,7 @@ int32_t handle_arguments(int argc,
   }
   else
   {
-    char *end_ptr = "\0";
+    char *end_ptr = '\0';
     *transmission_rate = strtol(argv[index_of_transmission_rate], &
                                 end_ptr, 10);
     if (*transmission_rate <= 0)
@@ -125,34 +126,6 @@ int32_t handle_arguments(int argc,
   return 0;
 }
 
-useconds_t calculate_time_to_sleep(const ConnectionManager *manager,
-                                   const struct timeval *lowest,
-                                   const int8_t allinactive)
-{
-  if (manager->size != 0)
-  {
-    if (((manager->size == 1) &&
-         (manager->head->state == Free)) ||
-        !allinactive)
-    {
-      return 0;
-    }
-    struct timeval now;
-    gettimeofday(&now, 0);
-
-    struct timeval one_second_later;
-    one_second_later.tv_sec =  lowest->tv_sec + 1;
-    one_second_later.tv_usec = lowest->tv_usec;
-    if(timercmp(&one_second_later, &now, >))
-    {
-      struct timeval time_to_sleep;
-      timersub(&one_second_later, &now, &time_to_sleep);
-      return time_to_sleep.tv_usec;
-    }
-  }
-
-  return 0;
-}
 
 int terminate = 0;
 
@@ -190,10 +163,6 @@ void handle_socket_destroy(int *socket,
 
 int main(int argc, char **argv)
 {
-  //test_rename();
-  //return 0;
-
-  //setup_deamon();
   //daemon(0 , 0);
   int32_t listening_sock_description = -1;
   int32_t transmission_rate    = 0;
@@ -213,6 +182,7 @@ int main(int argc, char **argv)
   start_thread_pool(thread_pool, NUMBER_OF_THREADS);
 
 
+  const int32_t number_of_connections     = 300;
   int success = 0;
   if (handle_arguments(argc, argv, &port, path, &transmission_rate) == -1)
   {
@@ -222,8 +192,7 @@ int main(int argc, char **argv)
 
   create_default_response_files(path);
 
-  const int32_t number_of_connections     = 300;
-  if( setup_listening_connection(port, &listening_sock_description) == -1 )
+  if (setup_listening_connection(port, &listening_sock_description) == -1)
   {
     success = -1;
     goto exit;
@@ -370,7 +339,11 @@ int main(int argc, char **argv)
 
       if (ptr->state == ReadingFromFile)
       {
-        queue_request_to_read(ptr, &req_manager, transmission_rate, &master, &greatest_file_desc);
+        queue_request_to_read(ptr,
+                              &req_manager,
+                              transmission_rate,
+                              &master,
+                              &greatest_file_desc);
       }
 
       if (ptr->state == WaitingFromIORead &&
@@ -386,20 +359,16 @@ int main(int argc, char **argv)
         }
       }
 
-      if (ptr->state == WaitingFromIOWrite /*&&
-          FD_ISSET(ptr->datagram_socket, &read_fds)*/)
+      if (ptr->state == WaitingFromIOWrite &&
+          FD_ISSET(ptr->datagram_socket, &read_fds))
       {
-        if (FD_ISSET(ptr->datagram_socket, &read_fds))
-        {
-          receive_from_thread_write(ptr);
-          if (ptr->state != WaitingFromIOWrite)
-          {
-            handle_socket_destroy(&ptr->datagram_socket,
-                                  &manager,
-                                  &greatest_file_desc,
-                                  &master);
-          }
-        }
+
+        receive_from_thread_write(ptr);
+        handle_socket_destroy(&ptr->datagram_socket,
+                              &manager,
+                              &greatest_file_desc,
+                              &master);
+
       }
 
       if (timercmp(&(ptr->last_connection_time), &lowest, <))
@@ -430,7 +399,7 @@ int main(int argc, char **argv)
       else
       {
         ptr = ptr->next_ptr;
-      }      
+      }
     }
 
     useconds_t time_to_sleep = calculate_time_to_sleep(&manager,

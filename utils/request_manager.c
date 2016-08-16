@@ -105,17 +105,22 @@ void free_request_list(request_manager *manager)
   manager->tail = NULL;
   manager->exit = 1;
 
+  pthread_cond_broadcast(&(manager->conditional_variable));
   pthread_mutex_unlock(&(manager->mutex));
 
   printf("\n ****signal to threads***.\n");
-  while (manager->number_of_threads > 0)
+  pthread_mutex_lock(&(manager->mutex));
   {
-    pthread_mutex_lock(&(manager->mutex));
-    pthread_cond_broadcast(&(manager->conditional_variable));
-    usleep(100);
-    pthread_mutex_unlock(&(manager->mutex));
+    while (manager->number_of_threads != 0)
+    {
+      pthread_cond_wait(&(manager->conditional_variable), &(manager->mutex));
+      usleep(100);
+    }
+    pthread_cond_destroy(&(manager->conditional_variable));
   }
 
-  pthread_cond_destroy(&(manager->conditional_variable));
+  usleep(1000);
+  pthread_mutex_unlock(&(manager->mutex));
+
   pthread_mutex_destroy(&(manager->mutex));
 }

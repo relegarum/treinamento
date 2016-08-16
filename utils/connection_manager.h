@@ -23,5 +23,8 @@ void remove_connection_in_list(ConnectionManager *manager, Connection *item);
 void free_list(ConnectionManager *manager);
 
 int get_greatest_socket_descriptor(ConnectionManager *manager);
+useconds_t calculate_time_to_sleep(const ConnectionManager *manager,
+                                   const struct timeval *lowest,
+                                   const int8_t allinactive);
 
 #endif

@@ -53,6 +53,7 @@ void *do_thread(void *arg)
         if (manager->exit)
         {
           --(manager->number_of_threads);
+          pthread_cond_broadcast(&(manager->conditional_variable));
           pthread_mutex_unlock(&(manager->mutex));
 
           printf("Thread dying: %d\n", id);

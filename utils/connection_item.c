@@ -777,11 +777,6 @@ int32_t receive_data_from_put(Connection *item, const uint32_t transmission_rate
     item->partial_read   += bytes_received;
   } while((rate != total_bytes_received));
 
-  /*if (item->read_data >= item->header_size )
-  {
-    return fail;
-  }*/
-
   if (end_of_resource &&
       item->read_data >= item->resource_size)
   {
@@ -825,47 +820,23 @@ void queue_request_to_write(Connection *item,
 void receive_from_thread_write(Connection *item)
 {
   uint32_t data_wrote = 0;
-  /*uint32_t rate = (BUFSIZ - 1 < transmission_rate)? BUFSIZ - 1: transmission_rate;*/
   int32_t read_data = read(item->datagram_socket, &data_wrote, sizeof(data_wrote));
   if (read_data < 0)
   {
-    if (errno == EAGAIN ||
-        errno == EWOULDBLOCK)
-    {
-      return;
-    }
-
     perror(__FUNCTION__);
-    if (errno == EBADF)
-    {
-      item->state = WritingIntoFile;
-    }
-    else
-    {
-      item->state = Sent;
-    }
+    item->state = Closed;
     return;
   }
 
-  if (data_wrote > 0)
+  if (data_wrote == 0)
   {
-    item->state = ReceivingFromPut;
-    item->wrote_data += data_wrote;
+    item->error = 1;
+    item->state = Closed;
+    return;
   }
-  else
-  {
-    if ((item->tries)++ < MAX_TRIES )
-    {
-      item->state = WaitingFromIOWrite;
-      return;
-    }
-    else
-    {
-      item->state  = SendingHeader;
-      item->header = strdup(HeaderInternalError);
-      item->error  = 1;
-    }    
-  }
+
+  item->state = ReceivingFromPut;
+  item->wrote_data += data_wrote;
 
   if (item->wrote_data >= item->resource_size)
   {
@@ -881,8 +852,6 @@ void receive_from_thread_write(Connection *item)
     item->wrote_data = 0;
     return;
   }
-
-  //close(item->datagram_socket);
 }
 
 int32_t verify_if_has_to_exchange_data(Connection* item)
