@@ -1,3 +1,9 @@
+/* \file http_utils.c
+ *
+ * \brief Contem a implementacao de utilitarios relativos ao protocolo HTTP 1.0
+ *
+ * "$Id: $"
+*/
 #include "http_utils.h"
 #include "file_utils.h"
 
@@ -309,7 +315,7 @@ int verify_connection(ConnectionManager *manager,
       add_connection_in_list(manager, item);
 
       handle_new_socket( new_socket_description, master, greatest_fds);
-      if (set_socket_as_nonblocking(new_socket_description))
+      if (set_socket_as_nonblocking(new_socket_description) != 0)
       {
         perror("set as nonblock");
         return -1;
@@ -322,10 +328,6 @@ int verify_connection(ConnectionManager *manager,
                 sizeof(remote_ip));*/
 
       //printf("Connection from %s -> socket_num = %d\n", remote_ip, new_socket_description);
-      /*if (new_socket_description > *greatest_fds)
-      {
-        *greatest_fds = new_socket_description;
-      }*/
     }
   }
   return 0;

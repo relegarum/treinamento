@@ -1,3 +1,10 @@
+/* \file connection_item.c
+ *
+ * \brief Contem a implementacao de funcoes de criacao e manipulacao de conexoes
+ * ativas.
+ *
+ * "$Id: $"
+*/
 #include "connection_item.h"
 
 #include <stdlib.h>

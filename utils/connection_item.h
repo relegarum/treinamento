@@ -1,3 +1,10 @@
+/* \file connection_item.c
+ *
+ * \brief Contem a declaracao de funcoes de criacao e manipulacao de conexoes
+ * ativas.
+ *
+ * "$Id: $"
+*/
 #ifndef CONNECTION_ITEM_H
 #define CONNECTION_ITEM_H
 

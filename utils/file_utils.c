@@ -1,3 +1,10 @@
+/* \file file_utils.c
+ *
+ * \brief Implementacao de funcoes relativas ao tratamento de arquivos
+ * necessarios ao servidor
+ *
+ * "$Id: $"
+*/
 #include "file_utils.h"
 
 #include <stdio.h>

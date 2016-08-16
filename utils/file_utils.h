@@ -1,3 +1,10 @@
+/* \file file_utils.c
+ *
+ * \brief Declaracao de funcoes relativas ao tratamento de arquivos
+ * necessarios ao servidor
+ *
+ * "$Id: $"
+*/
 #ifndef FILE_UTILS_H
 #define FILE_UTILS_H
 #include <stdint.h>

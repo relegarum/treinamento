@@ -398,14 +398,6 @@ int main(int argc, char **argv)
                                   &master);
           }
         }
-        else if (ptr->tries < MAX_RETRIES)
-        {
-          ++(ptr->tries);
-        }
-        else
-        {
-          ptr->state = Closed;
-        }
       }
 
       if (timercmp(&(ptr->last_connection_time), &lowest, <))
@@ -455,12 +447,7 @@ exit:
 
   free_request_list(&req_manager);
   free_list(&manager);
-
-  int index = 0;
-  for (index = 0; index < NUMBER_OF_THREADS; ++index)
-  {
-    pthread_join(thread_pool[index].pthread, NULL);
-  }
+  join_thread_pool(thread_pool, NUMBER_OF_THREADS);
 
   if (listening_sock_description != -1)
   {

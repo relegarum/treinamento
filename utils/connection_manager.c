@@ -1,3 +1,10 @@
+/* \file connection_manager.c
+ *
+ * \brief Contem a implementacao funcoes de manipulacao da lista de conexoes
+ * ativas.
+ *
+ * "$Id: $"
+*/
 #include "connection_manager.h"
 #include <stdlib.h>
 

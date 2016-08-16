@@ -1,3 +1,9 @@
+/* \file http_utils.c
+ *
+ * \brief Contem a declaracao de utilitarios relativos ao protocolo HTTP 1.0
+ *
+ * "$Id: $"
+*/
 #ifndef HTTP_UTILS_H
 #define HTTP_UTILS_H
 
