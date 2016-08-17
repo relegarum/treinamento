@@ -1,5 +1,6 @@
 #include "form.h"
 #include "ui_form.h"
+#include <signal.h>
 
 Form::Form(QWidget *parent) :
   QWidget(parent),
@@ -31,8 +32,11 @@ void Form::on_ui_change_button_clicked()
   }
   auto speed      = multiplier * (ui->ui_speed_text->text().toInt());
 
-  mConfig.setBasePath(ui->ui_path_text->text().toStdString());
-  mConfig.setPort(ui->ui_port_text->text().toInt());
-  mConfig.setSpeed(speed);
-  mConfig.write();
+  //mConfig.setBasePath(ui->ui_path_text->text().toStdString());
+  //mConfig.setPort(ui->ui_port_text->text().toInt());
+  //mConfig.setSpeed(speed);
+  //mConfig.write();
+  auto pid = 0;
+
+  kill(pid, SIGUSR1);
 }

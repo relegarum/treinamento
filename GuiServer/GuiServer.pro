@@ -11,13 +11,15 @@ greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 TARGET = GuiServer
 TEMPLATE = app
 
+CONFIG += c++11
+
 
 SOURCES += main.cpp\
-    ../utils/Config.cpp \
+    #../utils/Config.cpp \
     ../Viewer/form.cpp
 
 HEADERS  += \
-    ../utils/Config.h \
+    #../utils/Config.h \
     ../Viewer/form.h
 
 FORMS    += \

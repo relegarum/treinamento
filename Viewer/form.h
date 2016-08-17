@@ -2,7 +2,7 @@
 #define FORM_H
 
 #include <QWidget>
-#include "../utils/Config.h"
+//#include "../utils/Config.h"
 
 namespace Ui {
   class Form;
@@ -21,7 +21,7 @@ private slots:
 
 private:
   Ui::Form *ui;
-  server::Config mConfig;
+  //server::Config mConfig;
 };
 
 #endif // FORM_H
